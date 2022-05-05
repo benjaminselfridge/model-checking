@@ -1,5 +1,5 @@
-Introduction to model checking (with Haskell!), Part 1: checking invariants
-===========================================================================
+Introduction to model checking (with Haskell!), Part 1: transition systems and invariants
+=========================================================================================
 
 Recently, I've been reading a
 [book](https://www.amazon.com/Principles-Model-Checking-MIT-Press/dp/026202649X/ref=sr_1_1?crid=2RGC1B0N79HIJ&keywords=principles+of+model+checking&qid=1651762001&sprefix=principles+of+model+checking%2Caps%2C134&sr=8-1)
