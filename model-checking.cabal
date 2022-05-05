@@ -22,7 +22,7 @@ maintainer:         benselfridge@galois.com
 extra-source-files: CHANGELOG.md
 
 library
-    exposed-modules:  ModelChecking
+    exposed-modules:  ModelChecking1
 
     -- Modules included in this library but not exported.
     -- other-modules:

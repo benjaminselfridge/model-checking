@@ -1,0 +1,48 @@
+<h1 id="introduction-to-model-checking-with-haskell-part-2">Introduction to model checking (with Haskell!), Part 2</h1>
+<div class="sourceCode" id="cb1"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">module</span> <span class="dt">ModelChecking2</span> <span class="kw">where</span></span></code></pre></div>
+<p>We’ll build on concepts in the previous lesson, so let’s import that now.</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">data</span> <span class="dt">NFA</span> q ap <span class="ot">=</span> <span class="dt">NFA</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>  {<span class="ot"> nfaTransitions ::</span> [(q, <span class="dt">Proposition</span> ap, q)]</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>  ,<span class="ot"> nfaInitials ::</span> [q]</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>  ,<span class="ot"> nfaFinals ::</span> [q]</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>  }</span></code></pre></div>
+<div class="sourceCode" id="cb3"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ot">nextStatesOn ::</span> <span class="dt">NFA</span> q ap <span class="ot">-&gt;</span> q <span class="ot">-&gt;</span> <span class="dt">Assignment</span> ap <span class="ot">-&gt;</span> [q]</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>nextStatesOn nfa q f <span class="ot">=</span> [ q&#39; <span class="op">|</span> (q, p, q&#39;) <span class="ot">&lt;-</span> nfaTransitions nfa, f <span class="op">|=</span> p ]</span></code></pre></div>
+<div class="sourceCode" id="cb4"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="co">-- | Product of a transition system and an NFA.</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="ot">(*) ::</span> <span class="dt">Eq</span> q</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    <span class="ot">=&gt;</span> <span class="dt">TransitionSystem</span> s ap</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    <span class="ot">-&gt;</span> <span class="dt">NFA</span> q ap</span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    <span class="ot">-&gt;</span> <span class="dt">TransitionSystem</span> (s, q) q</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>ts <span class="op">*</span> nfa <span class="ot">=</span> <span class="dt">TransitionSystem</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>  { tsTransitions <span class="ot">=</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>      [ ((s, q), (s&#39;, q&#39;)) <span class="op">|</span> (s, s&#39;) <span class="ot">&lt;-</span> tsTransitions ts</span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>                           , (q, p, q&#39;) <span class="ot">&lt;-</span> nfaTransitions nfa</span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>                           , tsLabel ts s&#39; <span class="op">|=</span> p</span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>                           ]</span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>  , tsInitials <span class="ot">=</span></span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>      [ (s, q) <span class="op">|</span> s  <span class="ot">&lt;-</span> tsInitials ts</span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>               , q0 <span class="ot">&lt;-</span> nfaInitials nfa</span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a>               , q  <span class="ot">&lt;-</span> nextStatesOn nfa q0 (tsLabel ts s)</span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a>               ]</span>
+<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a>  , tsLabel <span class="ot">=</span> \(s, q) <span class="ot">-&gt;</span> only q</span>
+<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a>  }</span></code></pre></div>
+<div class="sourceCode" id="cb5"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="kw">data</span> <span class="dt">Color</span> <span class="ot">=</span> <span class="dt">Red</span> <span class="op">|</span> <span class="dt">Yellow</span> <span class="op">|</span> <span class="dt">Green</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>  <span class="kw">deriving</span> (<span class="dt">Eq</span>, <span class="dt">Show</span>)</span></code></pre></div>
+<div class="sourceCode" id="cb6"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="ot">traffic_light ::</span> <span class="dt">TransitionSystem</span> <span class="dt">Color</span> <span class="dt">Color</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>traffic_light <span class="ot">=</span> <span class="dt">TransitionSystem</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>  { tsInitials <span class="ot">=</span> [<span class="dt">Green</span>]</span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>  , tsTransitions <span class="ot">=</span> [ (<span class="dt">Red</span>, <span class="dt">Green</span>), (<span class="dt">Green</span>, <span class="dt">Yellow</span>)</span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>                    , (<span class="dt">Yellow</span>, <span class="dt">Red</span>), (<span class="dt">Green</span>, <span class="dt">Red</span>) ]</span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>  , tsLabel <span class="ot">=</span> \color <span class="ot">-&gt;</span> only color</span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>  }</span></code></pre></div>
+<div class="sourceCode" id="cb7"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="ot">yellow_before_red ::</span> <span class="dt">NFA</span> <span class="dt">Int</span> <span class="dt">Color</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>yellow_before_red <span class="ot">=</span> <span class="dt">NFA</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>  { nfaInitials <span class="ot">=</span> [<span class="dv">0</span>]</span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>  , nfaFinals <span class="ot">=</span> [<span class="dv">1</span>]</span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>  , nfaTransitions <span class="ot">=</span> [ (<span class="dv">0</span>, atom <span class="dt">Green</span>, <span class="dv">0</span>)</span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>                     , (<span class="dv">0</span>, atom <span class="dt">Yellow</span>, <span class="dv">1</span>)</span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>                     , (<span class="dv">0</span>, atom <span class="dt">Red</span>, <span class="dv">2</span>)</span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>                     , (<span class="dv">2</span>, atom <span class="dt">Yellow</span>, <span class="dv">2</span>)</span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>                     , (<span class="dv">2</span>, <span class="fu">not</span> (atom <span class="dt">Yellow</span>), <span class="dv">0</span>)</span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a>                     ]</span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a>  }</span></code></pre></div>
