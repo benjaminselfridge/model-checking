@@ -72,7 +72,10 @@
 <p>Let’s fire up ghci and check our first model! The model will be a single traffic light, and we will make sure that the light is never red and green at the same time. It’s not a very interesting property, but it’s a good one.</p>
 <pre><code>  &gt; data Color = Red | Green | Yellow deriving (Show, Eq)
   &gt; ts = TransitionSystem [Red] [(Red, Green), (Green, Yellow), (Yellow, Red)] only</code></pre>
-<p>In this case, our set of atomic propositions is just <code>Red</code>, <code>Green</code>, and <code>Yellow</code>, which is the same as our set of states! The label of each state <code>s</code> is <code>only s</code>, meaning that only that color is <code>True</code>. In other words, in the state <code>Red</code>, <code>Red</code> is <code>True</code>, <code>Green</code> is <code>False</code>, and <code>Yellow</code> is <code>False</code>. That’s why we use the <code>only</code> function as our labeling function; it simply labels each state with the assignment that sets that color to <code>True</code>, and everything else to <code>False</code>:</p>
+<p>In this case, our set of atomic propositions is just <code>Red</code>, <code>Green</code>, and <code>Yellow</code>, which is the same as our set of states! We can see this by examining the type of <code>ts</code>:</p>
+<pre><code>  &gt; :type ts
+  ts :: TransitionSystem Color Color</code></pre>
+<p>The label of each state <code>s</code> is <code>only s</code>, meaning that only that color is <code>True</code>.</p>
 <pre><code>  &gt; tsLabel ts Red Red     -- is Red true in state Red?
   True
   &gt; tsLabel ts Red Green   -- is Green true in state Red?

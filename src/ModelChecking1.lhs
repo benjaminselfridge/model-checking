@@ -182,12 +182,15 @@ time. It's not a very interesting property, but it's a good one.
 ```
 
 In this case, our set of atomic propositions is just `Red`, `Green`, and
-`Yellow`, which is the same as our set of states! The label of each state `s` is
-`only s`, meaning that only that color is `True`. In other words, in the state
-`Red`, `Red` is `True`, `Green` is `False`, and `Yellow` is `False`. That's why
-we use the `only` function as our labeling function; it simply labels each state
-with the assignment that sets that color to `True`, and everything else to
-`False`:
+`Yellow`, which is the same as our set of states! We can see this by examining
+the type of `ts`:
+
+```
+  > :type ts
+  ts :: TransitionSystem Color Color
+```
+
+The label of each state `s` is `only s`, meaning that only that color is `True`.
 
 ```
   > tsLabel ts Red Red     -- is Red true in state Red?
