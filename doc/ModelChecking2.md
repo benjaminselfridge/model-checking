@@ -1,71 +1,28 @@
-# Introduction to model checking (with Haskell!), Part 2
+---
+title: "Model Checking in Haskell, Part 2: From Programs to Transition
+  Systems"
+---
 
 ``` {.haskell .literate}
 module ModelChecking2 where
-```
 
-We'll build on concepts in the previous lesson, so let's import that
-now.
+import ModelChecking1 hiding ( TransitionSystem(..) )
 
-``` {.haskell .literate}
-data NFA q ap = NFA
-  { nfaTransitions :: [(q, Proposition ap, q)]
-  , nfaInitials :: [q]
-  , nfaFinals :: [q]
+import Data.List (find)
+import Prelude hiding (not)
+
+data TransitionSystem s a ap = TransitionSystem
+  { tsInitials :: [s]
+  , tsTransitions :: [(s, a, s)]
+  , tsLabel :: s -> Assignment ap
   }
-```
 
-``` {.haskell .literate}
-nextStatesOn :: NFA q ap -> q -> Assignment ap -> [q]
-nextStatesOn nfa q f = [ q' | (q, p, q') <- nfaTransitions nfa, f |= p ]
-```
+checkInvariant :: Eq s => Proposition ap -> TransitionSystem s a ap -> Maybe [s]
+checkInvariant p ts =
+  let rs = reachables (tsInitials ts) (omitLabel <$> tsTransitions ts)
+  in path <$> find (\(s,_) -> tsLabel ts s |= not p) rs
+  where omitLabel (s, a, s') = (s, s')
+        path (s, rpath) = reverse (s:rpath)
 
-``` {.haskell .literate}
--- | Product of a transition system and an NFA.
-(*) :: Eq q
-    => TransitionSystem s ap
-    -> NFA q ap
-    -> TransitionSystem (s, q) q
-ts * nfa = TransitionSystem
-  { tsTransitions =
-      [ ((s, q), (s', q')) | (s, s') <- tsTransitions ts
-                           , (q, p, q') <- nfaTransitions nfa
-                           , tsLabel ts s' |= p
-                           ]
-  , tsInitials =
-      [ (s, q) | s  <- tsInitials ts
-               , q0 <- nfaInitials nfa
-               , q  <- nextStatesOn nfa q0 (tsLabel ts s)
-               ]
-  , tsLabel = \(s, q) -> only q
-  }
-```
-
-``` {.haskell .literate}
-data Color = Red | Yellow | Green
-  deriving (Eq, Show)
-```
-
-``` {.haskell .literate}
-traffic_light :: TransitionSystem Color Color
-traffic_light = TransitionSystem
-  { tsInitials = [Green]
-  , tsTransitions = [ (Red, Green), (Green, Yellow)
-                    , (Yellow, Red), (Green, Red) ]
-  , tsLabel = \color -> only color
-  }
-```
-
-``` {.haskell .literate}
-yellow_before_red :: NFA Int Color
-yellow_before_red = NFA
-  { nfaInitials = [0]
-  , nfaFinals = [1]
-  , nfaTransitions = [ (0, atom Green, 0)
-                     , (0, atom Yellow, 1)
-                     , (0, atom Red, 2)
-                     , (2, atom Yellow, 2)
-                     , (2, not (atom Yellow), 0)
-                     ]
-  }
+data VarType = IntType | BoolType
 ```

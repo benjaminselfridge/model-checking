@@ -1,6 +1,3 @@
-Introduction to model checking (with Haskell!), Part 1: transition systems and invariants
-=========================================================================================
-
 Recently, I've been reading a
 [book](https://www.amazon.com/Principles-Model-Checking-MIT-Press/dp/026202649X/ref=sr_1_1?crid=2RGC1B0N79HIJ&keywords=principles+of+model+checking&qid=1651762001&sprefix=principles+of+model+checking%2Caps%2C134&sr=8-1)
 and watching a [lecture
@@ -28,20 +25,20 @@ Preamble:
 
 > module ModelChecking1 where
 >
-> import Data.List (union, (\\), nub, find)
-> import Prelude hiding (not, (*))
+> import Data.List (nubBy, find)
+> import Prelude hiding (not)
 > import qualified Prelude as P
 
 Overview
---------
+========
 
-In this blog post, I will introduce the notion of a transition system, and we
-will explore how to state simple properties about them, called *invariants*. We
-will also implement the simplest model checking algorithm, which is to check
-that an invariant holds for all reachable states of the system.
+In this post, I will introduce the notion of a transition system, and we will
+state simple properties about them, called *invariants*. We will also implement
+the simplest model checking algorithm, whose aim is to check that an invariant
+holds for all reachable states of the system.
 
 Transition systems
-------------------
+==================
 
 So, what are these "models" we are checking? They are called _transition
 systems_. A transition system is a directed graph, where the vertices of the
@@ -51,20 +48,15 @@ when a state has multiple outgoing transitions, that simply means that it can
 follow any of them. A transition system also has a nonempty set of _initial
 states_, which correspond to the beginning of a program's execution.
 
-Along with the states (vertices) and transitions (directed edges), a transition
-system has one additional ingredient: a set of _atomic propositional variables_
-that are either true or false in each state. In Haskell, we represent these
-variables as a type (or a type variable `ap`), and we formalize the notion of an
-_assignment_ of variables as a function from this type to `Bool`:
+As we transition from one state to another (by following one of the edges),
+certain things may be come true or false. We model this with a set of *atomic
+propositional variables*. Each state, then, comes equipped with an *assignment*,
+giving the truth value of each one of these variables when the system is in that
+particular state. In Haskell, we represent this set of variables as a type (or a
+type variable `ap`), and we formalize the notion of an *assignment* of variables
+as a function from this type to `Bool`:
 
 > type Assignment ap = ap -> Bool
-
-It's often convenient to "lift" a propositional variable `p` to the assignment
-which sets `p` to `True`, and everything else to `False`, so we define a
-function to accomplish this here:
-
-> only :: Eq ap => ap -> Assignment ap
-> only = (==)
 
 The idea is that every state in our transition system is *labeled* with an
 assignment, identifying which atomic propositions are true or false in each
@@ -83,7 +75,7 @@ this is by no means a good representation if your goal is efficiency; the point
 here is to make the concepts as easy to understand as possible.
 
 Propositions
-------------
+============
 
 As stated above, every state in our transition system is "labeled" with an
 assignment of boolean truth values to the propositional variables `ap`. We are
@@ -141,44 +133,50 @@ In other words, the assignment `f` satisfies the proposition `p` and `q`
 whenever `f |= p` and `f |= q`; likewise for the other operators.
 
 Checking invariants
--------------------
+===================
 
 In the previous section, we defined the notion of an assignment, which is a
 function from variables to truth values, as well as the notion of a proposition,
 which either holds or does not hold for a given assignment. We can now ask a
 simple question of a given transition system `ts` and a given proposition `p`:
 "Does `p` hold at all reachable states in `ts`?" Stated in terms of the
-definitions above, we are asking whether, for each reachable state `s` of `ts`,
-whether `tsLabel ts s |= p`.
+definitions above, we are asking, for each reachable state `s` of `ts`, whether
+`tsLabel ts s |= p`.
 
 So, how do we check whether an invariant holds? The answer is simple: we search
 the underlying graph of the transition system, and evaluate the proposition on
 each state (more precisely, on the *label* of each state). To do this, we first
-define an auxiliary function that collects all reachable states in the graph.
+define an auxiliary function that collects all reachable states in the graph,
+along with a path that leads to each state.
 
-> reachables :: Eq s => [s] -> [(s, s)] -> [s]
-> reachables starts = go [] starts
->   where go visited [] _ = nub visited
+> reachables :: Eq s => [s] -> [(s, s)] -> [(s, [s])]
+> reachables starts = go [] (zip starts (repeat []))
+>   where go visited [] _ = nubBy (\x y -> fst x == fst y) visited
 >         go visited starts transitions =
->           let nexts = [ s'' | s <- starts, (s', s'') <- transitions, s == s' ] \\ visited
+>           let nexts = [ (s'', s:path)  | (s, path) <- starts
+>                                        , (s', s'') <- transitions
+>                                        , s' == s
+>                                        , s'' `notElem` map fst visited ]
 >           in go (visited ++ starts) nexts transitions
 
 Now, to check an invariant, we simply collect all the reachable states and make
-sure the invariant holds for each of their labels, producing a counterexample if
-there is one:
+sure the invariant holds for each of their labels, producing a path to a bad
+state if there is one:
 
-> checkInvariant :: Eq s => Proposition ap -> TransitionSystem s ap -> Maybe s
+> checkInvariant :: Eq s => Proposition ap -> TransitionSystem s ap -> Maybe [s]
 > checkInvariant p ts =
 >   let rs = reachables (tsInitials ts) (tsTransitions ts)
->   in find (\s -> tsLabel ts s |= not p) rs
+>   in path <$> find (\(s,_) -> tsLabel ts s |= not p) rs
+>   where path (s, rpath) = reverse (s:rpath)
 
 Let's fire up ghci and check our first model! The model will be a single traffic
 light, and we will make sure that the light is never red and green at the same
-time. It's not a very interesting property, but it's a good one.
+time. It's not a very interesting property, but it's a good one for any traffic
+light to have.
 
 ```
   > data Color = Red | Green | Yellow deriving (Show, Eq)
-  > ts = TransitionSystem [Red] [(Red, Green), (Green, Yellow), (Yellow, Red)] only
+  > ts = TransitionSystem [Red] [(Red, Green), (Green, Yellow), (Yellow, Red)] (==)
 ```
 
 In this case, our set of atomic propositions is just `Red`, `Green`, and
@@ -190,7 +188,7 @@ the type of `ts`:
   ts :: TransitionSystem Color Color
 ```
 
-The label of each state `s` is `only s`, meaning that only that color is `True`.
+The label of each state `s` is `(== s)`, meaning that only that color is `True`.
 
 ```
   > tsLabel ts Red Red     -- is Red true in state Red?
@@ -217,13 +215,14 @@ invariant holds! Let's try it with an invariant that doesn't hold:
 
 ```
   > checkInvariant (not (atom Yellow)) ts
-  Just Yellow
+  Just [Red, Green, Yellow]
 ```
 
-Our invariant checking algorithm was able to reach a state that violated `not
-(atom Yellow)`; unsurprisingly, it was the `Yellow` state. Because `Yellow` is
-reachable in our transition system, our property doesn't hold. What if, however,
-`Yellow` is not reachable?
+Our invariant checking algorithm was able to find a path to a state that
+violated `not (atom Yellow)`; unsurprisingly, the bad state was `Yellow` (the
+last state in the counterexample path). Because `Yellow` is reachable in our
+transition system, our property doesn't hold. What if, however, `Yellow` is not
+reachable?
 
 ```
   > ts = TransitionSystem [Red] [(Red, Green), (Green, Red)] only
@@ -232,7 +231,7 @@ reachable in our transition system, our property doesn't hold. What if, however,
 ```
 
 Conclusion
-----------
+==========
 
 At this point, you're probably thinking: "That's it?" Well, no! That's
 definitely not it. There's tons more things to talk about, and we will be
