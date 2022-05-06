@@ -26,10 +26,7 @@ model, using a variety of nifty algorithms.
 This series of blog posts is an attempt to formalize some of the core
 notions and algorithms of model checking in Haskell. I hope it provides
 a brief and illustrative introduction for other Haskell programmers who
-are curious about the topic. *This is for learning purposes only!* I
-deliberately avoided putting any effort into making things efficient.
-I'm really using Haskell as a convenient executable notation to express
-the ideas.
+are curious about the topic.
 
 This post is a [literate haskell
 document](https://github.com/benjaminselfridge/model-checking/blob/master/src/ModelChecking.lhs).
@@ -82,17 +79,15 @@ in each state. We can now define a transition system in Haskell:
 ``` {.haskell .literate}
 data TransitionSystem s ap = TransitionSystem
   { tsInitials :: [s]
-  , tsTransitions :: [(s, s)]
+  , tsTransitions :: s -> [s]
   , tsLabel :: s -> Assignment ap
   }
 ```
 
-The initial states are represented as a list, the transitions as an
-association list (mathematically, a relation), and the labels as a
-function from states to `Assignment`s of the atomic propositions `ap`.
-As stated in the introduction, this is by no means a good representation
-if your goal is efficiency; the point here is to make the concepts as
-easy to understand as possible.
+The initial states are represented as a list, the transitions as a
+function mapping each state to its set of successor states, and the
+labels as a function from states to `Assignment`s of the atomic
+propositions `ap`.
 
 # Propositions
 
@@ -183,14 +178,13 @@ all reachable states in the graph, along with a path that leads to each
 state.
 
 ``` {.haskell .literate}
-reachables :: Eq s => [s] -> [(s, s)] -> [(s, [s])]
+reachables :: Eq s => [s] -> (s -> [s]) -> [(s, [s])]
 reachables starts = go [] (zip starts (repeat []))
   where go visited [] _ = nubBy (\x y -> fst x == fst y) visited
         go visited starts transitions =
-          let nexts = [ (s'', s:path)  | (s, path) <- starts
-                                       , (s', s'') <- transitions
-                                       , s' == s
-                                       , s'' `notElem` map fst visited ]
+          let nexts = [ (s', s:path)  | (s, path) <- starts
+                                      , s' <- transitions s
+                                      , s' `notElem` map fst visited ]
           in go (visited ++ starts) nexts transitions
 ```
 
@@ -211,25 +205,31 @@ traffic light, and we will make sure that the light is never red and
 green at the same time. It's not a very interesting property, but it's a
 good one for any traffic light to have.
 
-      > data Color = Red | Green | Yellow deriving (Show, Eq)
-      > ts = TransitionSystem [Red] [(Red, Green), (Green, Yellow), (Yellow, Red)] (==)
+``` {.haskell}
+  > data Color = Red | Green | Yellow deriving (Show, Eq)
+  > ts = TransitionSystem [Red] (\s -> case s of Red -> [Green]; Green -> [Yellow]; Yellow -> [Red]) (==)
+```
 
 In this case, our set of atomic propositions is just `Red`, `Green`, and
 `Yellow`, which is the same as our set of states! We can see this by
 examining the type of `ts`:
 
-      > :type ts
-      ts :: TransitionSystem Color Color
+``` {.haskell}
+  > :type ts
+  ts :: TransitionSystem Color Color
+```
 
 The label of each state `s` is `(== s)`, meaning that only that color is
 `True`.
 
-      > tsLabel ts Red Red     -- is Red true in state Red?
-      True
-      > tsLabel ts Red Green   -- is Green true in state Red?
-      False
-      > tsLabel ts Green Green -- is Green true in state Green?
-      True
+``` {.haskell}
+  > tsLabel ts Red Red     -- is Red true in state Red?
+  True
+  > tsLabel ts Red Green   -- is Green true in state Red?
+  False
+  > tsLabel ts Green Green -- is Green true in state Green?
+  True
+```
 
 Now, we would like to know that `Red` and `Green` are never true at the
 same time. It's trivial to see why this is true, because by
@@ -239,14 +239,18 @@ satisfies both `Red` and `Green`.
 We can use our `checkInvariant` function to check that our invariant
 holds:
 
-      > checkInvariant (not (atom Red .& atom Green)) ts
-      Nothing
+``` {.haskell}
+  > checkInvariant (not (atom Red .& atom Green)) ts
+  Nothing
+```
 
 The result `Nothing` means there were no counterexamples, which means
 our invariant holds! Let's try it with an invariant that doesn't hold:
 
-      > checkInvariant (not (atom Yellow)) ts
-      Just [Red, Green, Yellow]
+``` {.haskell}
+  > checkInvariant (not (atom Yellow)) ts
+  Just [Red, Green, Yellow]
+```
 
 Our invariant checking algorithm was able to find a path to a state that
 violated `not (atom Yellow)`; unsurprisingly, the bad state was `Yellow`
@@ -254,9 +258,11 @@ violated `not (atom Yellow)`; unsurprisingly, the bad state was `Yellow`
 reachable in our transition system, our property doesn't hold. What if,
 however, `Yellow` is not reachable?
 
-      > ts = TransitionSystem [Red] [(Red, Green), (Green, Red)] only
-      > checkInvariant (not (atom Yellow)) ts
-      Nothing
+``` {.haskell}
+  > ts = TransitionSystem [Red] (\s -> case s of Red -> [Green]; Green -> [Red]) (==)
+  > checkInvariant (not (atom Yellow)) ts
+  Nothing
+```
 
 # Conclusion
 
