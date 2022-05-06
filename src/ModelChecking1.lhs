@@ -228,26 +228,7 @@ reachable?
 Conclusion
 ==========
 
-At this point, you're probably thinking: "That's it?" Well, no! That's
-definitely not it. There's tons more things to talk about, and we will be
-getting deeper into the world of model checking in subsequent posts.
-
-There's two basic dimensions that will become deeper. The first dimension is
-about *how* we create a transition system from a more high-level artifact. Many
-of the artifacts we're interested in modeling involve multiple, concurrent
-processes that interact in interesting ways, and we'll need to expand our
-machinery to construct appropriate transition systems in order to succesfully
-model these artifacts.
-
-The second dimension involves the kinds of properties we can state. Invariants
-are great, but they're *dead* simple. They don't let you talk about how
-different states relate to each other, and they also don't let you talk about
-eventuality ("at some point in the future, this thing will happen"). In future
-posts, we'll explore how to state, and verify, more complex properties of this
-sort.
-
 Hopefully, this first post gave you a taste of what model checking is all about.
-In the next post, we'll explore the second dimension a little bit by expanding
-the kinds of properties we can state and verify. We'll define the notion of a
-*regular safety property*, which is a generalization of invariants that allows
-us to talk about relationships between states.
+In the next post, we'll talk about how to convert higher-level program to
+transition systems, and use this machinery to look at a more complex example
+than the traffic light system studied in this post.

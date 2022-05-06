@@ -23,13 +23,14 @@ extra-source-files: CHANGELOG.md
 
 library
     exposed-modules:  ModelChecking1
-                      -- ModelChecking2
+                      ModelChecking2
 
     -- Modules included in this library but not exported.
     -- other-modules:
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
-    build-depends:    base
+    build-depends:    base,
+                      containers
     hs-source-dirs:   src
     default-language: Haskell2010

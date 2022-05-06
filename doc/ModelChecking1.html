@@ -217,11 +217,11 @@
 </header>
 <nav id="TOC" role="doc-toc">
 <ul>
-<li><a href="#overview">Overview</a></li>
-<li><a href="#transition-systems">Transition systems</a></li>
-<li><a href="#propositions">Propositions</a></li>
-<li><a href="#checking-invariants">Checking invariants</a></li>
-<li><a href="#conclusion">Conclusion</a></li>
+<li><a href="#overview"><span class="toc-section-number">1</span> Overview</a></li>
+<li><a href="#transition-systems"><span class="toc-section-number">2</span> Transition systems</a></li>
+<li><a href="#propositions"><span class="toc-section-number">3</span> Propositions</a></li>
+<li><a href="#checking-invariants"><span class="toc-section-number">4</span> Checking invariants</a></li>
+<li><a href="#conclusion"><span class="toc-section-number">5</span> Conclusion</a></li>
 </ul>
 </nav>
 <p>Recently, I’ve been reading a <a href="https://www.amazon.com/Principles-Model-Checking-MIT-Press/dp/026202649X/ref=sr_1_1?crid=2RGC1B0N79HIJ&amp;keywords=principles+of+model+checking&amp;qid=1651762001&amp;sprefix=principles+of+model+checking%2Caps%2C134&amp;sr=8-1">book</a> and watching a <a href="https://www.youtube.com/watch?v=Y5Hg4MvUXc4&amp;list=PLwabKnOFhE38C0o6z_bhlF_uOUlblDTjh">lecture series</a> about model checking. This is a topic I’ve learned a bit about in the past, but never really studied in earnest.</p>
@@ -234,9 +234,9 @@
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> <span class="dt">Data.List</span> (nubBy, find)</span>
 <span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> <span class="dt">Prelude</span> <span class="kw">hiding</span> (not)</span>
 <span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> <span class="kw">qualified</span> <span class="dt">Prelude</span> <span class="kw">as</span> <span class="dt">P</span></span></code></pre></div>
-<h1 id="overview">Overview</h1>
+<h1 data-number="1" id="overview"><span class="header-section-number">1</span> Overview</h1>
 <p>In this post, I will introduce the notion of a transition system, and we will state simple properties about them, called <em>invariants</em>. We will also implement the simplest model checking algorithm, whose aim is to check that an invariant holds for all reachable states of the system.</p>
-<h1 id="transition-systems">Transition systems</h1>
+<h1 data-number="2" id="transition-systems"><span class="header-section-number">2</span> Transition systems</h1>
 <p>So, what are these “models” we are checking? They are called <em>transition systems</em>. A transition system is a directed graph, where the vertices of the graph represent possible program states, and the edges represent transitions from one state to another. The transitions are followed nondeterministically; when a state has multiple outgoing transitions, that simply means that it can follow any of them. A transition system also has a nonempty set of <em>initial states</em>, which correspond to the beginning of a program’s execution.</p>
 <p>As we transition from one state to another (by following one of the edges), certain things may be come true or false. We model this with a set of <em>atomic propositional variables</em>. Each state, then, comes equipped with an <em>assignment</em>, giving the truth value of each one of these variables when the system is in that particular state. In Haskell, we represent this set of variables as a type (or a type variable <code>ap</code>), and we formalize the notion of an <em>assignment</em> of variables as a function from this type to <code>Bool</code>:</p>
 <div class="sourceCode" id="cb2"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">type</span> <span class="dt">Assignment</span> ap <span class="ot">=</span> ap <span class="ot">-&gt;</span> <span class="dt">Bool</span></span></code></pre></div>
@@ -247,7 +247,7 @@
 <span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>  ,<span class="ot"> tsLabel ::</span> s <span class="ot">-&gt;</span> <span class="dt">Assignment</span> ap</span>
 <span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>  }</span></code></pre></div>
 <p>The initial states are represented as a list, the transitions as a function mapping each state to its set of successor states, and the labels as a function from states to <code>Assignment</code>s of the atomic propositions <code>ap</code>.</p>
-<h1 id="propositions">Propositions</h1>
+<h1 data-number="3" id="propositions"><span class="header-section-number">3</span> Propositions</h1>
 <p>As stated above, every state in our transition system is “labeled” with an assignment of boolean truth values to the propositional variables <code>ap</code>. We are interested in checking whether certain properties hold for our transition system. In order to to state these properties, we will need the notion of a logical proposition. I formalize this as a function that maps <code>Assignment</code>s to <code>Bool</code>s; the idea is that for a fixed <code>Assignment</code> of values to the atomic propositional variables, a proposition either holds or does not hold.</p>
 <div class="sourceCode" id="cb4"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="kw">type</span> <span class="dt">Proposition</span> ap <span class="ot">=</span> <span class="dt">Assignment</span> ap <span class="ot">-&gt;</span> <span class="dt">Bool</span></span></code></pre></div>
 <p>With this type, we can define propositional satisfaction as function application:</p>
@@ -277,7 +277,7 @@
 <span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a><span class="ot">(.-&gt;) ::</span> <span class="dt">Proposition</span> ap <span class="ot">-&gt;</span> <span class="dt">Proposition</span> ap <span class="ot">-&gt;</span> <span class="dt">Proposition</span> ap</span>
 <span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a>p <span class="op">.-&gt;</span> q <span class="ot">=</span> <span class="fu">not</span> p <span class="op">.|</span> q</span></code></pre></div>
 <p>In other words, the assignment <code>f</code> satisfies the proposition <code>p</code> and <code>q</code> whenever <code>f |= p</code> and <code>f |= q</code>; likewise for the other operators.</p>
-<h1 id="checking-invariants">Checking invariants</h1>
+<h1 data-number="4" id="checking-invariants"><span class="header-section-number">4</span> Checking invariants</h1>
 <p>In the previous section, we defined the notion of an assignment, which is a function from variables to truth values, as well as the notion of a proposition, which either holds or does not hold for a given assignment. We can now ask a simple question of a given transition system <code>ts</code> and a given proposition <code>p</code>: “Does <code>p</code> hold at all reachable states in <code>ts</code>?” Stated in terms of the definitions above, we are asking, for each reachable state <code>s</code> of <code>ts</code>, whether <code>tsLabel ts s |= p</code>.</p>
 <p>So, how do we check whether an invariant holds? The answer is simple: we search the underlying graph of the transition system, and evaluate the proposition on each state (more precisely, on the <em>label</em> of each state). To do this, we first define an auxiliary function that collects all reachable states in the graph, along with a path that leads to each state.</p>
 <div class="sourceCode" id="cb10"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="ot">reachables ::</span> <span class="dt">Eq</span> s <span class="ot">=&gt;</span> [s] <span class="ot">-&gt;</span> (s <span class="ot">-&gt;</span> [s]) <span class="ot">-&gt;</span> [(s, [s])]</span>
@@ -318,10 +318,7 @@
 <div class="sourceCode" id="cb17"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a>  <span class="op">&gt;</span> ts <span class="ot">=</span> <span class="dt">TransitionSystem</span> [<span class="dt">Red</span>] (\s <span class="ot">-&gt;</span> <span class="kw">case</span> s <span class="kw">of</span> <span class="dt">Red</span> <span class="ot">-&gt;</span> [<span class="dt">Green</span>]; <span class="dt">Green</span> <span class="ot">-&gt;</span> [<span class="dt">Red</span>]) (<span class="op">==</span>)</span>
 <span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a>  <span class="op">&gt;</span> checkInvariant (<span class="fu">not</span> (atom <span class="dt">Yellow</span>)) ts</span>
 <span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">Nothing</span></span></code></pre></div>
-<h1 id="conclusion">Conclusion</h1>
-<p>At this point, you’re probably thinking: “That’s it?” Well, no! That’s definitely not it. There’s tons more things to talk about, and we will be getting deeper into the world of model checking in subsequent posts.</p>
-<p>There’s two basic dimensions that will become deeper. The first dimension is about <em>how</em> we create a transition system from a more high-level artifact. Many of the artifacts we’re interested in modeling involve multiple, concurrent processes that interact in interesting ways, and we’ll need to expand our machinery to construct appropriate transition systems in order to succesfully model these artifacts.</p>
-<p>The second dimension involves the kinds of properties we can state. Invariants are great, but they’re <em>dead</em> simple. They don’t let you talk about how different states relate to each other, and they also don’t let you talk about eventuality (“at some point in the future, this thing will happen”). In future posts, we’ll explore how to state, and verify, more complex properties of this sort.</p>
-<p>Hopefully, this first post gave you a taste of what model checking is all about. In the next post, we’ll explore the second dimension a little bit by expanding the kinds of properties we can state and verify. We’ll define the notion of a <em>regular safety property</em>, which is a generalization of invariants that allows us to talk about relationships between states.</p>
+<h1 data-number="5" id="conclusion"><span class="header-section-number">5</span> Conclusion</h1>
+<p>Hopefully, this first post gave you a taste of what model checking is all about. In the next post, we’ll talk about how to convert higher-level program to transition systems, and use this machinery to look at a more complex example than the traffic light system studied in this post.</p>
 </body>
 </html>
