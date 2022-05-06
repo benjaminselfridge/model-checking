@@ -8,10 +8,11 @@ title: "Model Checking in Haskell, Part 2: From Programs to Transition
     Systems](#program-graphs-to-transition-systems)
 -   [[3]{.toc-section-number} Example: Soda
     Machine](#example-soda-machine)
+-   [[4]{.toc-section-number} Conclusion](#conclusion)
 
 In this post, we'll talk about how to convert an imperative computer
-program into a transition system. We'll then look at a few example
-programs, and show how to use this conversion to check interesting
+program into a transition system. We'll then look at an example program,
+and show how to use this conversion routine to check interesting
 invariants about the program's state.
 
 Preamble:
@@ -51,8 +52,7 @@ The *state* of a program is a mapping from variables to values.
 type State var val = Map var val
 ```
 
-A *guard* is a function that tells us whether the program state
-satisfies a particular condition.
+A *condition* is a predicate over the `State`.
 
 ``` {.haskell .literate}
 type Cond var val = State var val -> Bool
@@ -96,8 +96,6 @@ Let's walk through the definition of `pgToTS`.
 
 ``` {.haskell .literate}
 pgToTS pg = TransitionSystem
-  { tsInitials = [ (loc, pgInitialState pg)
-                 | loc <- pgInitialLocations pg ]
 ```
 
 The initial states of the transition system will be all pairs
@@ -105,14 +103,23 @@ The initial states of the transition system will be all pairs
 and `state0` is the initial state of the program graph.
 
 ``` {.haskell .literate}
-  , tsTransitions = \(loc, state) ->
-      [ (loc', action state) | (cond, action, loc') <- pgTransitions pg loc
-                             , cond state ]
+  { tsInitials = [ (loc, pgInitialState pg)
+                 | loc <- pgInitialLocations pg ]
 ```
 
 Given a state `(loc, state)` in our transition system, we have an
 outgoing transition system for every transition in the program graph
 from `loc` whose guard is satisfied by `state`.
+
+``` {.haskell .literate}
+  , tsTransitions = \(loc, state) ->
+      [ (loc', action state) | (guard, action, loc') <- pgTransitions pg loc
+                             , guard state ]
+```
+
+Finally, each `(loc, state)` pair is is labeled with the proposition
+that is `True` for location `loc` and no other locations, and is also
+`True` for all conditions that are satisfied by `state`.
 
 ``` {.haskell .literate}
   , tsLabel = \(loc, state) c -> case c of
@@ -121,46 +128,156 @@ from `loc` whose guard is satisfied by `state`.
   }
 ```
 
-Finally, each `(loc, state)` pair is is labeled with the proposition
-that is `True` for location `loc` and no other locations, and is also
-`True` for all conditions that are satisfied by `state`.
+Now, if we can express our system as a program graph, we can do model
+checking on it! Next, we will work through an example to see this in
+action.
 
 # Example: Soda Machine
+
+Let's look at an example of an imperative program defined as a program
+graph, and see how we can verify a simple property of this program. We
+will write a program that simulates a soda machine. The machine works as
+follows: First, the customer inserts a coin into the machine. Then, he
+selects "soda" or "beer", and the soda machine either gives him a soda
+or gives him a beer. Additionally, a maintenance technician can service
+the machine by collecting all of the coins, and refilling the machine to
+its maximum capacity for both soda and beer.
+
+There are three variables in our program: the number of coins in the
+machine, the number of sodas in the machine, and the number of beers in
+the machine. We have two locations in our program: `Start` and `Select`.
+In `Start`, the machine is idle, waiting for a customer to insert a
+coin, or for a technician to collect the coins and refill the beverages.
+In `Select`, the customer has inserted a coin, and the machine can
+either dispense a soda or a beer.
+
+Now, let's create a program graph representing the soda machine. First
+we will define our set of variables and locations:
 
 ``` {.haskell .literate}
 data SodaMachineVar = NumCoins | NumSodas | NumBeers
   deriving (Show, Eq, Ord)
 data SodaMachineLoc = Start | Select
-  deriving (Show, Eq)
+  deriving (Show, Eq, Ord)
+```
 
-soda_machine :: Int -> ProgramGraph SodaMachineLoc SodaMachineVar Int
-soda_machine max_num_drinks = ProgramGraph
+Now, for a specified maximum capacity for both drinks, we can define a
+soda machine as follows:
+
+``` {.haskell .literate}
+soda_machine :: Int -> Int -> ProgramGraph SodaMachineLoc SodaMachineVar Int
+```
+
+All three variables are integer-valued, so we can use `Int` as the value
+type for our program graph. Let's walk through the definition of each
+field in `soda_machine`:
+
+``` {.haskell .literate}
+soda_machine max_sodas max_beers =
+  let init = fromList [ (NumCoins, 0)
+                      , (NumSodas, max_sodas)
+                      , (NumBeers, max_beers) ]
+  in ProgramGraph
   { pgTransitions = \l -> case l of
+```
+
+The `Start` location has two outgoing guarded transitions. If the
+customer inserts a coin, we transition to the `Select` location and
+increment the number of coins in the machine. If the technician services
+the machine, we return the machine to the initial state `init`, setting
+the number of coins to `0` and filling the beers and sodas to the
+maximum capacity.
+
+``` {.haskell .literate}
       Start -> [ (const True, adjust (+1) NumCoins, Select)
-               , (const True, collect_and_refill, Start)
-               ]
-        where collect_and_refill _ = init
+               , (const True, const init, Start) ]
+```
+
+If the number of sodas is positive, then the customer can select a soda,
+at which point the number of sodas is decremented and the machine goes
+to location `Start`.
+
+``` {.haskell .literate}
       Select -> [ ( \state -> state ! NumSodas > 0
                   , adjust (subtract 1) NumSodas
                   , Start )
+```
+
+Similarly, the user may select a beer if the number of beers is
+positive.
+
+``` {.haskell .literate}
                 , ( \state -> state ! NumBeers > 0
                   , adjust (subtract 1) NumBeers
                   , Start )
-                ]
+```
+
+Finally, the user may press the "return coin" button after inserting a
+coin, at which point the machine unconditionally returns the coin.
+
+``` {.haskell .literate}
+                , ( const True, adjust (subtract 1) NumCoins, Start) ]
+```
+
+The machine starts in location `Start`, and is initially full of both
+soda and beer.
+
+``` {.haskell .literate}
   , pgInitialLocations = [Start]
   , pgInitialState = init
   }
- where init = fromList [ (NumCoins, 0)
-                       , (NumSodas, max_num_drinks)
-                       , (NumBeers, max_num_drinks)
-                       ]
-
-soda_machine_invariant_1 :: Int -> Proposition (Either SodaMachineLoc (Cond SodaMachineVar Int))
-soda_machine_invariant_1 max_num_drinks f =
-  f (Right (\state -> state ! NumCoins ==
-                     2*max_num_drinks - (state ! NumSodas + state ! NumBeers)))
-
-soda_machine_invariant_2 :: Int -> Proposition (Either SodaMachineLoc (Cond SodaMachineVar Int))
-soda_machine_invariant_2 max_num_drinks =
-  atom (Left Start) .-> soda_machine_invariant_1 max_num_drinks
 ```
+
+One property we would like our soda machine to have is that the number
+of coins is consistent with the current number of sodas and beers in the
+machine. In particular, we would like to know that the number of coins,
+the number of sodas, and the number of beers all add up to a constant
+number: `max_sodas + max_beers`.
+
+``` {.haskell .literate}
+soda_machine_invariant_1 :: Int -> Int -> Proposition (Either SodaMachineLoc (Cond SodaMachineVar Int))
+soda_machine_invariant_1 max_sodas max_beers f =
+  f (Right (\state -> state ! NumCoins + state ! NumSodas + state ! NumBeers ==
+                      max_sodas + max_beers))
+```
+
+Let's check this property of our soda machine in ghci! We'll use a
+maximum capacity of `2` for both soda and beer:
+
+``` {.haskell}
+  > checkInvariant (soda_machine_invariant_1 2 2) (pgToTS (soda_machine 2 2))
+  Just [(Start,fromList [(NumCoins,0),(NumSodas,2),(NumBeers,2)]),(Select,fromList [(NumCoins,1),(NumSodas,2),(NumBeers,2)])]
+```
+
+Aha! Our stated property actually doesn't hold. Immediately after the
+customer inserts a coin, the system is in an inconsistent state. We can
+fix this by restricting the invariant so it only applies when we are in
+the `Start` state:
+
+``` {.haskell .literate}
+soda_machine_invariant_2 :: Int -> Int -> Proposition (Either SodaMachineLoc (Cond SodaMachineVar Int))
+soda_machine_invariant_2 max_sodas max_beers =
+  atom (Left Start) .-> soda_machine_invariant_1 max_sodas max_beers
+```
+
+Now, let's check this new version:
+
+``` {.haskell}
+  > checkInvariant (soda_machine_invariant_2 2 2) (pgToTS (soda_machine 2 2))
+  Nothing
+```
+
+Wonderful! Now we know that whenever the machine is in the `Start`
+state, the number of coins is equal to the number of sodas and beers
+that were purchased.
+
+# Conclusion
+
+In this post, we explored how to convert a higher-level imperative
+"program graph", with a global state and guarded transitions, can be
+"compiled" or "reified" into a transition system. We walked through an
+example program graph representing a soda machine, converted this graph
+to a transition system, and checked an invariant of that system to show
+that our machine has a nice property.
+
+In the next post, we'll talk about...
