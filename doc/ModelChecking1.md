@@ -7,7 +7,9 @@ title: "Model Checking in Haskell, Part 1: Transition Systems and
 -   [[2]{.toc-section-number} Transition systems](#transition-systems)
 -   [[3]{.toc-section-number} Propositions](#propositions)
 -   [[4]{.toc-section-number} Checking invariants](#checking-invariants)
--   [[5]{.toc-section-number} Conclusion](#conclusion)
+-   [[5]{.toc-section-number} Example: Traffic
+    light](#example-traffic-light)
+-   [[6]{.toc-section-number} Conclusion](#conclusion)
 
 Recently, I've been reading a
 [book](https://www.amazon.com/Principles-Model-Checking-MIT-Press/dp/026202649X/ref=sr_1_1?crid=2RGC1B0N79HIJ&keywords=principles+of+model+checking&qid=1651762001&sprefix=principles+of+model+checking%2Caps%2C134&sr=8-1)
@@ -165,10 +167,11 @@ whenever `f |= p` and `f |= q`; likewise for the other operators.
 In the previous section, we defined the notion of an assignment, which
 is a function from variables to truth values, as well as the notion of a
 proposition, which either holds or does not hold for a given assignment.
-We can now ask a simple question of a given transition system `ts` and a
-given proposition `p`: "Does `p` hold at all reachable states in `ts`?"
-Stated in terms of the definitions above, we are asking, for each
-reachable state `s` of `ts`, whether `tsLabel ts s |= p`.
+Given a transition system `ts` and a proposition `p`, we can ask: "Does
+`p` hold at all reachable states in `ts`?" Stated in terms of the
+definitions above, we are asking, for each reachable state `s` of `ts`,
+whether `tsLabel ts s |= p`. A proposition which is supposed to hold at
+all reachable states of a transition system is called an *invariant*.
 
 So, how do we check whether an invariant holds? The answer is simple: we
 search the underlying graph of the transition system, and evaluate the
@@ -201,34 +204,31 @@ checkInvariant p ts =
   where path (s, rpath) = reverse (s:rpath)
 ```
 
+# Example: Traffic light
+
 Let's fire up ghci and check our first model! The model will be a single
 traffic light, and we will make sure that the light is never red and
 green at the same time. It's not a very interesting property, but it's a
 good one for any traffic light to have.
 
-``` {.haskell}
-  > data Color = Red | Green | Yellow deriving (Show, Eq)
-  > ts = TransitionSystem [Red] (\s -> case s of Red -> [Green]; Green -> [Yellow]; Yellow -> [Red]) (==)
+``` {.haskell .literate}
+data Color = Red | Green | Yellow deriving (Show, Eq, Ord)
 ```
 
-In this case, our set of atomic propositions is just `Red`, `Green`, and
-`Yellow`, which is the same as our set of states! We can see this by
-examining the type of `ts`:
-
-``` {.haskell}
-  > :type ts
-  ts :: TransitionSystem Color Color
+``` {.haskell .literate}
+traffic_light :: TransitionSystem Color Color
+traffic_light = TransitionSystem [Red] (\s -> case s of Red -> [Green]; Green -> [Yellow]; Yellow -> [Red]) (==)
 ```
 
 The label of each state `s` is `(== s)`, meaning that only that color is
 `True`.
 
 ``` {.haskell}
-  > tsLabel ts Red Red     -- is Red true in state Red?
+  > tsLabel traffic_light Red Red     -- is Red true in state Red?
   True
-  > tsLabel ts Red Green   -- is Green true in state Red?
+  > tsLabel traffic_light Red Green   -- is Green true in state Red?
   False
-  > tsLabel ts Green Green -- is Green true in state Green?
+  > tsLabel traffic_light Green Green -- is Green true in state Green?
   True
 ```
 
@@ -241,7 +241,7 @@ We can use our `checkInvariant` function to check that our invariant
 holds:
 
 ``` {.haskell}
-  > checkInvariant (not (atom Red .& atom Green)) ts
+  > checkInvariant (not (atom Red .& atom Green)) traffic_light
   Nothing
 ```
 
@@ -249,7 +249,7 @@ The result `Nothing` means there were no counterexamples, which means
 our invariant holds! Let's try it with an invariant that doesn't hold:
 
 ``` {.haskell}
-  > checkInvariant (not (atom Yellow)) ts
+  > checkInvariant (not (atom Yellow)) traffic_light
   Just [Red, Green, Yellow]
 ```
 
@@ -260,8 +260,8 @@ reachable in our transition system, our property doesn't hold. What if,
 however, `Yellow` is not reachable?
 
 ``` {.haskell}
-  > ts = TransitionSystem [Red] (\s -> case s of Red -> [Green]; Green -> [Red]) (==)
-  > checkInvariant (not (atom Yellow)) ts
+  > traffic_light = TransitionSystem [Red] (\s -> case s of Red -> [Green]; Green -> [Red]) (==)
+  > checkInvariant (not (atom Yellow)) traffic_light
   Nothing
 ```
 
