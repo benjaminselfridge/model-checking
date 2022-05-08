@@ -4,16 +4,18 @@ title: "Model Checking in Haskell, Part 2: From Programs to Transition
 ---
 
 -   [[1]{.toc-section-number} Program Graphs](#program-graphs)
--   [[2]{.toc-section-number} Program Graphs to Transition
-    Systems](#program-graphs-to-transition-systems)
--   [[3]{.toc-section-number} Example: Soda
+-   [[2]{.toc-section-number} Example: Soda
     Machine](#example-soda-machine)
--   [[4]{.toc-section-number} Conclusion](#conclusion)
+-   [[3]{.toc-section-number} Program Graphs to Transition
+    Systems](#program-graphs-to-transition-systems)
+-   [[4]{.toc-section-number} Checking soda machine
+    invariants](#checking-soda-machine-invariants)
+-   [[5]{.toc-section-number} Conclusion](#conclusion)
 
 In this post, we'll talk about how to convert an imperative computer
 program into a transition system. We'll then look at an example program,
 and show how to use this conversion routine to check interesting
-invariants about the program's state.
+invariants about the program's behavior.
 
 Preamble:
 
@@ -21,7 +23,7 @@ Preamble:
 module ModelChecking2 where
 
 import ModelChecking1
-import Data.Map.Strict (Map, (!), fromList, adjust)
+import Data.Map.Strict (Map, (!), fromList, adjust, insert)
 ```
 
 # Program Graphs
@@ -32,16 +34,11 @@ language. Our program representation will consist of a set of
 language like C. With each such location, we associate a collection of
 *guarded transitions*. A guarded transition is a triple
 `(guard, action, loc)`. Intuitively, the idea is: "If `guard` is true of
-the current global state, then modify the state with `action` and go to
-location `loc`."
-
-A guarded transition is a directed edge from one program location to
-another, which can only be followed when a particular condition holds,
-and which, when followed, may change the global program state by
-modifying some subset of the global variables. The idea is that when our
-program is in a location `loc` while executing, it is allowed to follow
-any of `loc`'s outgoing transitions whose guards are satisfied by the
-current state of the global variables.
+the current global state, then modify the state by performing `action`
+and go to location `loc`." When a guard is satisified in a given state,
+the corresponding transition system is said to be *enabled*. When
+multiple transitions are enabled, one of them is chosen
+nondeterministically.
 
 We will call this construction a *program graph*. To define it in
 Haskell, we first define a couple auxiliary notions.
@@ -79,6 +76,128 @@ data ProgramGraph loc action var val = ProgramGraph
 
 The `action` type is a name for each effect, and the `pgEffect` field
 maps each action to its corresponding `Effect`.
+
+# Example: Soda Machine
+
+Let's write a program that simulates a soda machine. The machine
+contains two types of drinks: soda, and beer. Each of them costs a
+single coin.
+
+There are three variables in our program: the number of coins in the
+machine, the number of sodas in the machine, and the number of beers in
+the machine. We have two locations in our program: `Start` and `Select`.
+In `Start`, the machine is idle, waiting for a customer to insert a
+coin, or for a technician to collect the coins and refill the beverages.
+In `Select`, the customer has inserted a coin, and the machine can
+either dispense a soda or a beer. Alternatively, the customer may push
+the "Return Coin" button, and his coin is returned to him.
+
+Before defining the soda machine program graph, we first introduce a few
+functions that will make the process feel a bit more like writing
+imperative code. The following operators are convenient for constructing
+conditions:
+
+``` {.haskell .literate}
+unconditionally :: Cond var val
+unconditionally = const True
+
+(!==) :: (Ord var, Eq val) => var -> val -> Cond var val
+(var !== val) state = state ! var == val
+
+(!>) :: (Ord var, Ord val) => var -> val -> Cond var val
+(var !> val) state = state ! var > val
+
+(!<) :: (Ord var, Ord val) => var -> val -> Cond var val
+(var !< val) state = state ! var < val
+```
+
+And the following operators are convenient for constructing effects:
+
+``` {.haskell .literate}
+(=:) :: Ord var => var -> val -> Effect var val
+(=:) = insert
+
+(+=:) :: (Ord var, Num val) => var -> val -> Effect var val
+var +=: val = adjust (+val) var
+
+(-=:) :: (Ord var, Num val) => var -> val -> Effect var val
+var -=: val = adjust (subtract val) var
+
+reset :: State var val -> Effect var val
+reset = const
+```
+
+Now, let's create a program graph representing the soda machine. First
+we will define our set of variables, locations, and actions:
+
+``` {.haskell .literate}
+data SodaMachineVar = NumCoins | NumSodas | NumBeers
+  deriving (Show, Eq, Ord)
+data SodaMachineLoc = Start | Select
+  deriving (Show, Eq, Ord)
+data SodaMachineAction = InsertCoin
+                       | GetBeer
+                       | GetSoda
+                       | ReturnCoin
+                       | ServiceMachine
+  deriving (Show, Eq, Ord)
+```
+
+Since all the variables are integer-valued, we can use `Int` as the
+value type for our program graph.
+
+``` {.haskell .literate}
+soda_machine :: Int -> Int -> ProgramGraph SodaMachineLoc SodaMachineAction SodaMachineVar Int
+soda_machine max_sodas max_beers =
+  let initial = fromList [ (NumCoins, 0)
+                         , (NumSodas, max_sodas)
+                         , (NumBeers, max_beers) ]
+  in ProgramGraph
+  { pgTransitions = \loc -> case loc of
+```
+
+The `Start` location has two outgoing guarded transitions. If the
+customer inserts a coin, we transition to the `Select` location and
+increment the number of coins in the machine. If the technician services
+the machine, we return the machine to the initial state, setting the
+number of coins to `0` and filling the beers and sodas to the maximum
+capacity.
+
+``` {.haskell .literate}
+      Start -> [ ( unconditionally, InsertCoin    , Select )
+               , ( unconditionally, ServiceMachine, Start  ) ]
+```
+
+In the `Select` location, the customer has already inserted a coin, and
+is selecting a drink. If the number of sodas is positive, then the
+customer can select a soda, at which point the number of sodas is
+decremented and the machine goes to location `Start`. The same holds for
+beer. Also, the user may press the "Return Coin" button after inserting
+a coin, at which point the machine unconditionally returns the coin.
+
+``` {.haskell .literate}
+      Select -> [ ( NumSodas !> 0  , GetSoda   , Start )
+                , ( NumBeers !> 0  , GetBeer   , Start )
+                , ( unconditionally, ReturnCoin, Start ) ]
+```
+
+The machine starts in location `Start`, and is initially full of both
+soda and beer.
+
+``` {.haskell .literate}
+  , pgEffect = \action -> case action of
+      InsertCoin     -> NumCoins +=: 1
+      GetSoda        -> NumSodas -=: 1
+      GetBeer        -> NumBeers -=: 1
+      ReturnCoin     -> NumCoins -=: 1
+      ServiceMachine -> reset initial
+```
+
+``` {.haskell .literate}
+  , pgInitialLocations = [Start]
+  , pgInitialState = initial
+  }
+```
 
 # Program Graphs to Transition Systems
 
@@ -144,117 +263,7 @@ Now, if we can express our system as a program graph, we can do model
 checking on it! Next, we will work through an example to see this in
 action.
 
-# Example: Soda Machine
-
-Let's look at an example of an imperative program defined as a program
-graph, and see how we can verify a simple property of this program. We
-will write a program that simulates a soda machine. The machine works as
-follows: First, the customer inserts a coin into the machine. Then, he
-selects "soda" or "beer", and the soda machine either gives him a soda
-or gives him a beer. Additionally, a maintenance technician can service
-the machine by collecting all of the coins, and refilling the machine to
-its maximum capacity for both soda and beer.
-
-There are three variables in our program: the number of coins in the
-machine, the number of sodas in the machine, and the number of beers in
-the machine. We have two locations in our program: `Start` and `Select`.
-In `Start`, the machine is idle, waiting for a customer to insert a
-coin, or for a technician to collect the coins and refill the beverages.
-In `Select`, the customer has inserted a coin, and the machine can
-either dispense a soda or a beer.
-
-Now, let's create a program graph representing the soda machine. First
-we will define our set of variables and locations:
-
-``` {.haskell .literate}
-data SodaMachineVar = NumCoins | NumSodas | NumBeers
-  deriving (Show, Eq, Ord)
-data SodaMachineLoc = Start | Select
-  deriving (Show, Eq, Ord)
-data SodaMachineAction = InsertCoin
-                       | GetBeer
-                       | GetSoda
-                       | ReturnCoin
-                       | ServiceMachine
-  deriving (Show, Eq, Ord)
-```
-
-Now, for a specified maximum capacity for both drinks, we can define a
-soda machine as follows:
-
-``` {.haskell .literate}
-soda_machine :: Int -> Int
-             -> ProgramGraph SodaMachineLoc SodaMachineAction SodaMachineVar Int
-```
-
-All three variables are integer-valued, so we can use `Int` as the value
-type for our program graph. Let's walk through the definition of each
-field in `soda_machine`:
-
-``` {.haskell .literate}
-soda_machine max_sodas max_beers =
-  let init = fromList [ (NumCoins, 0)
-                      , (NumSodas, max_sodas)
-                      , (NumBeers, max_beers) ]
-  in ProgramGraph
-  { pgTransitions = \l -> case l of
-```
-
-The `Start` location has two outgoing guarded transitions. If the
-customer inserts a coin, we transition to the `Select` location and
-increment the number of coins in the machine. If the technician services
-the machine, we return the machine to the initial state `init`, setting
-the number of coins to `0` and filling the beers and sodas to the
-maximum capacity.
-
-``` {.haskell .literate}
-      Start -> [ (const True, InsertCoin, Select)
-               , (const True, ServiceMachine, Start) ]
-```
-
-If the number of sodas is positive, then the customer can select a soda,
-at which point the number of sodas is decremented and the machine goes
-to location `Start`.
-
-``` {.haskell .literate}
-      Select -> [ ( \state -> state ! NumSodas > 0
-                  , GetSoda
-                  , Start )
-```
-
-Similarly, the user may select a beer if the number of beers is
-positive.
-
-``` {.haskell .literate}
-                , ( \state -> state ! NumBeers > 0
-                  , GetBeer
-                  , Start )
-```
-
-Finally, the user may press the "return coin" button after inserting a
-coin, at which point the machine unconditionally returns the coin.
-
-``` {.haskell .literate}
-                , ( const True, ReturnCoin, Start) ]
-```
-
-The machine starts in location `Start`, and is initially full of both
-soda and beer.
-
-``` {.haskell .literate}
-  , pgEffect = \action -> case action of
-      InsertCoin -> adjust (+1) NumCoins
-      GetSoda -> adjust (subtract 1) NumSodas
-      GetBeer -> adjust (subtract 1) NumBeers
-      ReturnCoin -> adjust (subtract 1) NumCoins
-      ServiceMachine -> const init
-```
-
-``` {.haskell .literate}
-  , pgInitialLocations = [Start]
-  , pgInitialState = init
-  }
-```
+# Checking soda machine invariants
 
 One property we would like our soda machine to have is that the number
 of coins is consistent with the current number of sodas and beers in the
