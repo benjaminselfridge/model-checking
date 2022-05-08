@@ -10,7 +10,7 @@ module ModelChecking3 where
 import ModelChecking1
 import ModelChecking2
 
-import Data.Map.Strict ((!), unionWithKey, insert)
+import Data.Map.Strict ((!), unionWithKey, insert, fromList)
 ```
 
 Do a thing
@@ -51,38 +51,18 @@ data ProcessAction = StartWaiting | SetLock | UnsetLock
 data Lock = Lock deriving (Eq, Show, Ord)
 ```
 
-Must be equal to. Put this in ModelChecking2.
-
-``` {.haskell .literate}
-(var =!= val) state = state ! var == val
-```
-
-Set equal to. Read as "becomes". Put this in ModelChecking2.
-
-``` {.haskell .literate}
-(=:=) :: Ord var => var -> val -> Effect var val
-(=:=) = insert
-```
-
-Guard for a transition that is always available. Put this in
-ModelChecking2.
-
-``` {.haskell .literate}
-unconditionally :: Cond var val
-unconditionally = const True
-```
-
 ``` {.haskell .literate}
 process :: ProgramGraph ProcessLoc ProcessAction Lock Bool
 process = ProgramGraph
   { pgTransitions = \loc -> case loc of
-      NonCrit -> [ ( unconditionally, StartWaiting, Wait ) ]
-      Wait    -> [ ( Lock =!= False , SetLock     , Crit ) ]
+      NonCrit -> [ ( unconditionally, StartWaiting, Wait    ) ]
+      Wait    -> [ ( Lock !== False , SetLock     , Crit    ) ]
       Crit    -> [ ( unconditionally, UnsetLock   , NonCrit ) ]
   , pgEffect = \action -> case action of
       StartWaiting -> id
-      SetLock -> id
-  , pgInitialLocations = undefined
-  , pgInitialState = undefined
+      SetLock      -> Lock =: True
+      UnsetLock    -> Lock =: False
+  , pgInitialLocations = [ NonCrit ]
+  , pgInitialState = fromList [ (Lock, False) ]
   }
 ```

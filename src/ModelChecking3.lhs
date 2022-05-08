@@ -37,31 +37,16 @@ If the lock is set,
 
 > data Lock = Lock deriving (Eq, Show, Ord)
 
-Must be equal to. Put this in ModelChecking2.
-
-> (=!=) :: (Ord var, Eq val) => var -> val -> Cond var val
-> (var =!= val) state = state ! var == val
-
-Set equal to. Read as "becomes". Put this in ModelChecking2.
-
-> (=:=) :: Ord var => var -> val -> Effect var val
-> (=:=) = insert
-
-The trivial condition. Put this in ModelChecking2.
-
-> unconditionally :: Cond var val
-> unconditionally = const True
-
 > process :: ProgramGraph ProcessLoc ProcessAction Lock Bool
 > process = ProgramGraph
 >   { pgTransitions = \loc -> case loc of
 >       NonCrit -> [ ( unconditionally, StartWaiting, Wait    ) ]
->       Wait    -> [ ( Lock =!= False , SetLock     , Crit    ) ]
+>       Wait    -> [ ( Lock !== False , SetLock     , Crit    ) ]
 >       Crit    -> [ ( unconditionally, UnsetLock   , NonCrit ) ]
 >   , pgEffect = \action -> case action of
 >       StartWaiting -> id
->       SetLock      -> Lock =:= True
->       UnsetLock    -> Lock =:= False
+>       SetLock      -> Lock =: True
+>       UnsetLock    -> Lock =: False
 >   , pgInitialLocations = [ NonCrit ]
 >   , pgInitialState = fromList [ (Lock, False) ]
 >   }

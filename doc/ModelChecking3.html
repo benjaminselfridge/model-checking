@@ -221,7 +221,7 @@
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> <span class="dt">ModelChecking1</span></span>
 <span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> <span class="dt">ModelChecking2</span></span>
 <span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> <span class="dt">Data.Map.Strict</span> ((!), unionWithKey, insert)</span></code></pre></div>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> <span class="dt">Data.Map.Strict</span> ((!), unionWithKey, insert, fromList)</span></code></pre></div>
 <p>Do a thing</p>
 <div class="sourceCode" id="cb2"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="ot">(|||) ::</span> (<span class="dt">Ord</span> var, <span class="dt">Show</span> var, <span class="dt">Eq</span> val)</span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>      <span class="ot">=&gt;</span> <span class="dt">ProgramGraph</span> loc1 action1 var val</span>
@@ -246,25 +246,18 @@
 <div class="sourceCode" id="cb4"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="kw">data</span> <span class="dt">ProcessAction</span> <span class="ot">=</span> <span class="dt">StartWaiting</span> <span class="op">|</span> <span class="dt">SetLock</span> <span class="op">|</span> <span class="dt">UnsetLock</span></span>
 <span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>  <span class="kw">deriving</span> (<span class="dt">Eq</span>, <span class="dt">Show</span>, <span class="dt">Ord</span>)</span></code></pre></div>
 <div class="sourceCode" id="cb5"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="kw">data</span> <span class="dt">Lock</span> <span class="ot">=</span> <span class="dt">Lock</span> <span class="kw">deriving</span> (<span class="dt">Eq</span>, <span class="dt">Show</span>, <span class="dt">Ord</span>)</span></code></pre></div>
-<p>Must be equal to. Put this in ModelChecking2.</p>
-<div class="sourceCode" id="cb6"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>(var <span class="op">=!=</span> val) state <span class="ot">=</span> state <span class="op">!</span> var <span class="op">==</span> val</span></code></pre></div>
-<p>Set equal to. Read as “becomes”. Put this in ModelChecking2.</p>
-<div class="sourceCode" id="cb7"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="ot">(=:=) ::</span> <span class="dt">Ord</span> var <span class="ot">=&gt;</span> var <span class="ot">-&gt;</span> val <span class="ot">-&gt;</span> <span class="dt">Effect</span> var val</span>
-<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>(<span class="op">=:=</span>) <span class="ot">=</span> insert</span></code></pre></div>
-<p>Guard for a transition that is always available. Put this in ModelChecking2.</p>
-<div class="sourceCode" id="cb8"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="ot">unconditionally ::</span> <span class="dt">Cond</span> var val</span>
-<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>unconditionally <span class="ot">=</span> <span class="fu">const</span> <span class="dt">True</span></span></code></pre></div>
-<div class="sourceCode" id="cb9"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="ot">process ::</span> <span class="dt">ProgramGraph</span> <span class="dt">ProcessLoc</span> <span class="dt">ProcessAction</span> <span class="dt">Lock</span> <span class="dt">Bool</span></span>
-<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>process <span class="ot">=</span> <span class="dt">ProgramGraph</span></span>
-<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>  { pgTransitions <span class="ot">=</span> \loc <span class="ot">-&gt;</span> <span class="kw">case</span> loc <span class="kw">of</span></span>
-<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>      <span class="dt">NonCrit</span> <span class="ot">-&gt;</span> [ ( unconditionally, <span class="dt">StartWaiting</span>, <span class="dt">Wait</span> ) ]</span>
-<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>      <span class="dt">Wait</span>    <span class="ot">-&gt;</span> [ ( <span class="dt">Lock</span> <span class="op">=!=</span> <span class="dt">False</span> , <span class="dt">SetLock</span>     , <span class="dt">Crit</span> ) ]</span>
-<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a>      <span class="dt">Crit</span>    <span class="ot">-&gt;</span> [ ( unconditionally, <span class="dt">UnsetLock</span>   , <span class="dt">NonCrit</span> ) ]</span>
-<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a>  , pgEffect <span class="ot">=</span> \action <span class="ot">-&gt;</span> <span class="kw">case</span> action <span class="kw">of</span></span>
-<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a>      <span class="dt">StartWaiting</span> <span class="ot">-&gt;</span> <span class="fu">id</span></span>
-<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a>      <span class="dt">SetLock</span> <span class="ot">-&gt;</span> <span class="fu">id</span></span>
-<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a>  , pgInitialLocations <span class="ot">=</span> <span class="fu">undefined</span></span>
-<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a>  , pgInitialState <span class="ot">=</span> <span class="fu">undefined</span></span>
-<span id="cb9-12"><a href="#cb9-12" aria-hidden="true" tabindex="-1"></a>  }</span></code></pre></div>
+<div class="sourceCode" id="cb6"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="ot">process ::</span> <span class="dt">ProgramGraph</span> <span class="dt">ProcessLoc</span> <span class="dt">ProcessAction</span> <span class="dt">Lock</span> <span class="dt">Bool</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>process <span class="ot">=</span> <span class="dt">ProgramGraph</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>  { pgTransitions <span class="ot">=</span> \loc <span class="ot">-&gt;</span> <span class="kw">case</span> loc <span class="kw">of</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>      <span class="dt">NonCrit</span> <span class="ot">-&gt;</span> [ ( unconditionally, <span class="dt">StartWaiting</span>, <span class="dt">Wait</span>    ) ]</span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>      <span class="dt">Wait</span>    <span class="ot">-&gt;</span> [ ( <span class="dt">Lock</span> <span class="op">!==</span> <span class="dt">False</span> , <span class="dt">SetLock</span>     , <span class="dt">Crit</span>    ) ]</span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>      <span class="dt">Crit</span>    <span class="ot">-&gt;</span> [ ( unconditionally, <span class="dt">UnsetLock</span>   , <span class="dt">NonCrit</span> ) ]</span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>  , pgEffect <span class="ot">=</span> \action <span class="ot">-&gt;</span> <span class="kw">case</span> action <span class="kw">of</span></span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>      <span class="dt">StartWaiting</span> <span class="ot">-&gt;</span> <span class="fu">id</span></span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>      <span class="dt">SetLock</span>      <span class="ot">-&gt;</span> <span class="dt">Lock</span> <span class="op">=:</span> <span class="dt">True</span></span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a>      <span class="dt">UnsetLock</span>    <span class="ot">-&gt;</span> <span class="dt">Lock</span> <span class="op">=:</span> <span class="dt">False</span></span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a>  , pgInitialLocations <span class="ot">=</span> [ <span class="dt">NonCrit</span> ]</span>
+<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a>  , pgInitialState <span class="ot">=</span> fromList [ (<span class="dt">Lock</span>, <span class="dt">False</span>) ]</span>
+<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a>  }</span></code></pre></div>
 </body>
 </html>
