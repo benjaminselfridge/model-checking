@@ -216,7 +216,7 @@ function that converts a program graph to a transition system.
 ``` {.haskell .literate}
 pgToTS :: Eq loc
        => ProgramGraph loc action var val
-       -> TransitionSystem (loc, State var val) (Either loc (Cond var val))
+       -> TransitionSystem (loc, State var val) action (Either loc (Cond var val))
 ```
 
 For a program graph with locations `loc`, variables `var`, and values
@@ -241,8 +241,18 @@ The initial states of the transition system will be all pairs
 and `state0` is the initial state of the program graph.
 
 ``` {.haskell .literate}
-  { tsInitials = [ (loc, pgInitialState pg)
-                 | loc <- pgInitialLocations pg ]
+  { tsInitialStates = [ (loc, pgInitialState pg)
+                      | loc <- pgInitialLocations pg ]
+```
+
+Each `(loc, state)` pair is is labeled with the proposition that is
+`True` for location `loc` and no other locations, and is also `True` for
+all conditions that are satisfied by `state`.
+
+``` {.haskell .literate}
+  , tsLabel = \(loc, state) c -> case c of
+      Left loc' -> loc == loc'
+      Right cond -> cond state
 ```
 
 Given a state `(loc, state)` in our transition system, we have an
@@ -251,19 +261,12 @@ whose guard is satisfied by `state`.
 
 ``` {.haskell .literate}
   , tsTransitions = \(loc, state) ->
-      [ (loc', pgEffect pg action state)
+      [ (action, (loc', pgEffect pg action state))
       | (guard, action, loc') <- pgTransitions pg loc
       , guard state ]
 ```
 
-Finally, each `(loc, state)` pair is is labeled with the proposition
-that is `True` for location `loc` and no other locations, and is also
-`True` for all conditions that are satisfied by `state`.
-
 ``` {.haskell .literate}
-  , tsLabel = \(loc, state) c -> case c of
-      Left loc' -> loc == loc'
-      Right cond -> cond state
   }
 ```
 
@@ -326,4 +329,5 @@ example program graph representing a soda machine, converted this graph
 to a transition system, and checked an invariant of that system to show
 that our machine has a nice property.
 
-In the next post, we'll talk about...
+In the next post, we'll explore how a few techniques for modeling
+concurrent processes.

@@ -167,7 +167,7 @@ that converts a program graph to a transition system.
 
 > pgToTS :: Eq loc
 >        => ProgramGraph loc action var val
->        -> TransitionSystem (loc, State var val) (Either loc (Cond var val))
+>        -> TransitionSystem (loc, State var val) action (Either loc (Cond var val))
 
 For a program graph with locations `loc`, variables `var`, and values `val`, the
 states of the corresponding transition system will be pairs `(loc, State var
@@ -187,25 +187,26 @@ The initial states of the transition system will be all pairs `(loc, state0)`
 where `l` is an initial location of the program graph, and `state0` is the
 initial state of the program graph.
 
->   { tsInitials = [ (loc, pgInitialState pg)
->                  | loc <- pgInitialLocations pg ]
+>   { tsInitialStates = [ (loc, pgInitialState pg)
+>                       | loc <- pgInitialLocations pg ]
+
+Each `(loc, state)` pair is is labeled with the proposition that is `True` for
+location `loc` and no other locations, and is also `True` for all conditions
+that are satisfied by `state`.
+
+>   , tsLabel = \(loc, state) c -> case c of
+>       Left loc' -> loc == loc'
+>       Right cond -> cond state
 
 Given a state `(loc, state)` in our transition system, we have an outgoing
 transition for every transition in the program graph from `loc` whose guard is
 satisfied by `state`.
 
 >   , tsTransitions = \(loc, state) ->
->       [ (loc', pgEffect pg action state)
+>       [ (action, (loc', pgEffect pg action state))
 >       | (guard, action, loc') <- pgTransitions pg loc
 >       , guard state ]
 
-Finally, each `(loc, state)` pair is is labeled with the proposition that is
-`True` for location `loc` and no other locations, and is also `True` for all
-conditions that are satisfied by `state`.
-
->   , tsLabel = \(loc, state) c -> case c of
->       Left loc' -> loc == loc'
->       Right cond -> cond state
 >   }
 
 Now, if we can express our system as a program graph, we can do model checking
@@ -261,4 +262,5 @@ graph", with a global state and guarded transitions, can be "compiled" or
 representing a soda machine, converted this graph to a transition system, and
 checked an invariant of that system to show that our machine has a nice property.
 
-In the next post, we'll talk about...
+In the next post, we'll explore how a few techniques for modeling concurrent
+processes.

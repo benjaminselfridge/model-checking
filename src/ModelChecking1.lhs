@@ -17,7 +17,7 @@ illustrative introduction for other Haskell programmers who are curious about
 the topic.
 
 This post is a [literate haskell
-document](https://github.com/benjaminselfridge/model-checking/blob/master/src/ModelChecking.lhs).
+document](https://github.com/benjaminselfridge/model-checking/blob/master/src/ModelChecking1.lhs).
 
 Preamble:
 
@@ -32,8 +32,8 @@ Overview
 
 In this post, I will introduce the notion of a transition system, and we will
 state simple properties about them, called *invariants*. We will also implement
-the simplest model checking algorithm, whose aim is to check that an invariant
-holds for all reachable states of the system.
+a simple model checking algorithm, whose aim is to check that an invariant holds
+for all reachable states of the system.
 
 Transition systems
 ==================
@@ -44,48 +44,55 @@ graph represent possible program states, and the edges represent transitions
 from one state to another. The transitions are followed nondeterministically;
 when a state has multiple outgoing transitions, that simply means that it can
 follow any of them. A transition system also has a nonempty set of _initial
-states_, which correspond to the beginning of a program's execution.
+states_, which are the states that the system may start in.
 
 As we transition from one state to another (by following one of the edges),
-certain things may be come true or false. We model this with a set of *atomic
-propositional variables*. Each state, then, comes equipped with an *assignment*,
-giving the truth value of each one of these variables when the system is in that
-particular state. In Haskell, we represent this set of variables as a type (or a
-type variable `ap`), and we formalize the notion of an *assignment* of variables
-as a function from this type to `Bool`:
+certain things may become true or false. We model this with a set of *atomic
+propositional variables* which are either true or false in every state. In
+Haskell, we represent this set of variables as a type (or a type variable `ap`),
+and we formalize the notion of a *truth assignment* as a function from this type
+to `Bool`:
 
-> type Assignment ap = ap -> Bool
+> type TruthAssignment ap = ap -> Bool
 
-The idea is that every state in our transition system is *labeled* with an
-assignment, identifying which atomic propositions are true or false in each
-state. We can now define a transition system in Haskell:
+The idea is that each state in our transition system is *labeled* with a truth
+assignment, identifying which atomic propositions hold. We can now define a
+transition system in Haskell:
 
-> data TransitionSystem s ap = TransitionSystem
->   { tsInitials :: [s]
->   , tsTransitions :: s -> [s]
->   , tsLabel :: s -> Assignment ap
+> data TransitionSystem s action ap = TransitionSystem
+
+A transition system is a set of *initial* states,
+
+>   { tsInitialStates :: [s]
+
+a *labeling* of each state with a truth assignment,
+
+>   , tsLabel :: s -> TruthAssignment ap
+
+and a list of outgoing transitions for each state.
+
+>   , tsTransitions :: s -> [(action, s)]
 >   }
 
-The initial states are represented as a list, the transitions as a function
-mapping each state to its set of successor states, and the labels as a function
-from states to `Assignment`s of the atomic propositions `ap`.
+For each transition `(action, s')`, `s'` is the next state, and `action` is a
+name (not necessarily unique) for the transition. The `action` will not be used
+in this post other than as a convenient way to label the transitions, but it
+will be more useful in subsequent posts.
 
 Propositions
 ============
 
-As stated above, every state in our transition system is "labeled" with an
-assignment of boolean truth values to the propositional variables `ap`. We are
-interested in checking whether certain properties hold for our transition
-system. In order to to state these properties, we will need the notion of a
-logical proposition. I formalize this as a function that maps `Assignment`s to
-`Bool`s; the idea is that for a fixed `Assignment` of values to the atomic
-propositional variables, a proposition either holds or does not hold.
+The whole point of model checking is to determine whether a transition system
+satisfies a given property. In order to to state such a property, we will need
+the notion of a logical proposition. I formalize this as a function that maps
+`TruthAssignment`s to `Bool`s; the idea is that for a fixed `TruthAssignment`, a
+proposition either holds or does not hold.
 
-> type Proposition ap = Assignment ap -> Bool
+> type Proposition ap = TruthAssignment ap -> Bool
 
 With this type, we can define propositional satisfaction as function application:
 
-> (|=) :: Assignment ap -> Proposition ap -> Bool
+> (|=) :: TruthAssignment ap -> Proposition ap -> Bool
 > f |= p = p f
 
 If `f` is an assignment and `p` is a proposition, `f |= p` is read as "f
@@ -107,8 +114,8 @@ holds" as follows:
 > atom :: ap -> Proposition ap
 > atom ap f = f ap
 
-Given an assignment `f : ap -> Bool`, `atom ap f` will be `True` if and only if
-`f` assigns `True` to the atomic propositional variable `ap`.
+For an assignment `f : ap -> Bool`, `atom ap f` will be `True` if and only if
+`f` assigns variable `ap` to `True`.
 
 We can define the usual boolean operators on propositions in terms of
 satisfaction:
@@ -131,14 +138,14 @@ whenever `f |= p` and `f |= q`; likewise for the other operators.
 Checking invariants
 ===================
 
-In the previous section, we defined the notion of an assignment, which is a
-function from variables to truth values, as well as the notion of a proposition,
-which either holds or does not hold for a given assignment. Given a transition
-system `ts` and a proposition `p`, we can ask: "Does `p` hold at all reachable
-states in `ts`?" Stated in terms of the definitions above, we are asking, for
-each reachable state `s` of `ts`, whether `tsLabel ts s |= p`. A proposition
-which is supposed to hold at all reachable states of a transition system is
-called an *invariant*.
+In the previous section, we defined the notion of a truth assignment, which is a
+function from variables to truth values. We also defined the notion of a
+proposition, which is a property that either holds or does not holds for a given
+assignment. Given a transition system `ts` and a proposition `p`, we can ask:
+"Does `p` hold at all reachable states in `ts`?" Stated in terms of the
+definitions above, we are asking, for each reachable state `s` of `ts`, whether
+`tsLabel ts s |= p`. A proposition which is supposed to hold at all reachable
+states of a transition system is called an *invariant*.
 
 So, how do we check whether an invariant holds? The answer is simple: we search
 the underlying graph of the transition system, and evaluate the proposition on
@@ -151,35 +158,45 @@ function mapping each state to its list of possible next states.
 > reachables starts = go [] (zip starts (repeat []))
 >   where go visited [] _ = nubBy (\x y -> fst x == fst y) visited
 >         go visited starts transitions =
->           let nexts = [ (s', s:path)  | (s, path) <- starts
->                                       , s' <- transitions s
->                                       , s' `notElem` map fst visited ]
+>           let nexts = [ (s', s:path)
+>                       | (s, path) <- starts
+>                       , s' <- transitions s
+>                       , s' `notElem` map fst visited ]
 >           in go (visited ++ starts) nexts transitions
 
 Now, to check an invariant, we simply collect all the reachable states and make
 sure the invariant holds for each of their labels, producing a path to a bad
 state if there is one:
 
-> checkInvariant :: Eq s => Proposition ap -> TransitionSystem s ap -> Maybe [s]
+> checkInvariant :: Eq s => Proposition ap -> TransitionSystem s action ap -> Maybe [s]
 > checkInvariant p ts =
->   let rs = reachables (tsInitials ts) (tsTransitions ts)
+>   let rs = reachables (tsInitialStates ts) (map snd <$> tsTransitions ts)
 >   in path <$> find (\(s,_) -> tsLabel ts s |= not p) rs
->   where path (s, rpath) = reverse (s:rpath)
+>   where path (s, ss) = reverse (s:ss)
 
 Example: Traffic light
 ======================
 
-Let's fire up ghci and check our first model! The model will be a single traffic
-light, and we will make sure that the light is never red and green at the same
-time. It's not a very interesting property, but it's a good one for any traffic
-light to have.
+Let's check our first model! The model will be a single traffic light, and we
+will make sure that the light is never red and green at the same time. It's not
+a very interesting property, but it's a good one for any traffic light to have.
 
 > data Color = Red | Green | Yellow deriving (Show, Eq, Ord)
 
-> traffic_light :: TransitionSystem Color Color
-> traffic_light = TransitionSystem [Red] (\s -> case s of Red -> [Green]; Green -> [Yellow]; Yellow -> [Red]) (==)
+> traffic_light :: TransitionSystem Color () Color
+> traffic_light = TransitionSystem
+>   { tsInitialStates = [Red]
+>   , tsLabel = (==)
+>   , tsTransitions = \s -> case s of
+>       Red    -> [((), Green )]
+>       Green  -> [((), Yellow)]
+>       Yellow -> [((), Red   )]
+>   }
 
-The label of each state `s` is `(== s)`, meaning that only that color is `True`.
+Since the `action` doesn't matter for this example, we just use `()`. Notice
+that `Color` serves as both our state type *and* as our set of atomic
+propositional variables. The label of each state `s` is `(== s)`, meaning that
+only that color is `True`. We can check this in `ghci`:
 
 ``` {.haskell}
   > tsLabel traffic_light Red Red     -- is Red true in state Red?

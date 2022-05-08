@@ -12,18 +12,36 @@ import qualified Data.GraphViz.Attributes.Complete as GV
 import Data.Graph.Inductive.Graph (Node)
 import Data.Map ((!))
 import Data.Maybe (fromJust)
+import Data.String
 
-tsDotGraph :: (Ord s, GV.Labellable s) => TransitionSystem s ap -> GV.DotGraph Node
+class ActionLabel l where
+  actionLabel :: l -> String
+
+instance ActionLabel () where
+  actionLabel () = ""
+
+instance (ActionLabel a, ActionLabel b) => ActionLabel (Either a b) where
+  actionLabel (Left a) = actionLabel a
+  actionLabel (Right b) = actionLabel b
+
+instance ActionLabel ProcessAction where
+  actionLabel StartWaiting = "start waiting"
+  actionLabel SetLock = "set lock"
+  actionLabel UnsetLock = "unset lock"
+
+tsDotGraph :: (Ord s, GV.Labellable s, ActionLabel action) => TransitionSystem s action ap -> GV.DotGraph Node
 tsDotGraph ts = GV.graphElemsToDot params nodes edges
-  where nodes = [ (i, s) | ((s, _), i) <- zip (reachables (tsInitials ts) (tsTransitions ts)) [0..] ]
-        edges = [ (i, i', "" :: String) | (i, s) <- nodes
-                                        , s' <- tsTransitions ts s
-                                        , let i' = fromJust (lookup s' nodesToIds) ]
+  where nodes = [ (i, s) | ((s, _), i) <- zip (reachables (tsInitialStates ts) (map snd <$> tsTransitions ts)) [0..] ]
+        edges = [ (i, i', actionLabel action) | (i, s) <- nodes
+                                              , (action, s') <- tsTransitions ts s
+                                              , let i' = fromJust (lookup s' nodesToIds) ]
         nodesToIds = (\(a, b) -> (b, a)) <$> nodes
         params = GV.nonClusteredParams
           { GV.globalAttributes = [ GV.GraphAttrs [GV.DPI 192.0 ]]
+          , GV.fmtEdge = \(_, _, l) ->
+              [GV.Label (GV.StrLabel (fromString $ " " ++ l ++ " "))]
           , GV.fmtNode = \(_, s) ->
-              let fillColor = if s `elem` tsInitials ts
+              let fillColor = if s `elem` tsInitialStates ts
                     then GV.DeepSkyBlue
                     else GV.LightGray
               in [ GV.style GV.filled
@@ -32,7 +50,7 @@ tsDotGraph ts = GV.graphElemsToDot params nodes edges
                  ]
           }
 
-graphTS :: (Ord s, GV.Labellable s) => FilePath -> TransitionSystem s ap -> IO ()
+graphTS :: (Ord s, GV.Labellable s, ActionLabel action) => FilePath -> TransitionSystem s action ap -> IO ()
 graphTS path ts = void $ GV.runGraphviz (tsDotGraph ts) GV.Png path
 
 instance GV.Labellable Color where
