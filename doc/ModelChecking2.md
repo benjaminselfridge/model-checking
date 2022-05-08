@@ -36,9 +36,8 @@ language like C. With each such location, we associate a collection of
 `(guard, action, loc)`. Intuitively, the idea is: "If `guard` is true of
 the current global state, then modify the state by performing `action`
 and go to location `loc`." When a guard is satisified in a given state,
-the corresponding transition system is said to be *enabled*. When
-multiple transitions are enabled, one of them is chosen
-nondeterministically.
+the corresponding transition is said to be *enabled*. When multiple
+transitions are enabled, one of them is chosen nondeterministically.
 
 We will call this construction a *program graph*. To define it in
 Haskell, we first define a couple auxiliary notions.
@@ -49,10 +48,10 @@ The *state* of a program is a mapping from variables to values.
 type State var val = Map var val
 ```
 
-A *condition* is a predicate over the `State`.
+A *state condition* is a predicate over the `State`.
 
 ``` {.haskell .literate}
-type Cond var val = State var val -> Bool
+type StateCondition var val = State var val -> Bool
 ```
 
 An *effect* is a state transformation, which modifies the state in some
@@ -67,7 +66,7 @@ set of initial locations, and an initial state.
 
 ``` {.haskell .literate}
 data ProgramGraph loc action var val = ProgramGraph
-  { pgTransitions :: loc -> [(Cond var val, action, loc)]
+  { pgTransitions :: loc -> [(StateCondition var val, action, loc)]
   , pgEffect :: action -> Effect var val
   , pgInitialLocations :: [loc]
   , pgInitialState :: State var val
@@ -95,19 +94,19 @@ the "Return Coin" button, and his coin is returned to him.
 Before defining the soda machine program graph, we first introduce a few
 functions that will make the process feel a bit more like writing
 imperative code. The following operators are convenient for constructing
-conditions:
+state conditions:
 
 ``` {.haskell .literate}
-unconditionally :: Cond var val
+unconditionally :: StateCondition var val
 unconditionally = const True
 
-(!==) :: (Ord var, Eq val) => var -> val -> Cond var val
+(!==) :: (Ord var, Eq val) => var -> val -> StateCondition var val
 (var !== val) state = state ! var == val
 
-(!>) :: (Ord var, Ord val) => var -> val -> Cond var val
+(!>) :: (Ord var, Ord val) => var -> val -> StateCondition var val
 (var !> val) state = state ! var > val
 
-(!<) :: (Ord var, Ord val) => var -> val -> Cond var val
+(!<) :: (Ord var, Ord val) => var -> val -> StateCondition var val
 (var !< val) state = state ! var < val
 ```
 
@@ -187,7 +186,7 @@ a coin, at which point the machine unconditionally returns the coin.
                 , ( unconditionally, ReturnCoin, Start ) ]
 ```
 
-Now, for each action, we define what effect it has on the program state:
+Now, for each action, we define the effect it has on the program state:
 
 ``` {.haskell .literate}
   , pgEffect = \action -> case action of
@@ -216,7 +215,7 @@ function that converts a program graph to a transition system.
 ``` {.haskell .literate}
 pgToTS :: Eq loc
        => ProgramGraph loc action var val
-       -> TransitionSystem (loc, State var val) action (Either loc (Cond var val))
+       -> TransitionSystem (loc, State var val) action (Either loc (StateCondition var val))
 ```
 
 For a program graph with locations `loc`, variables `var`, and values
@@ -247,7 +246,7 @@ and `state0` is the initial state of the program graph.
 
 Each `(loc, state)` pair is is labeled with the proposition that is
 `True` for location `loc` and no other locations, and is also `True` for
-all conditions that are satisfied by `state`.
+all state conditions that are satisfied by `state`.
 
 ``` {.haskell .literate}
   , tsLabel = \(loc, state) c -> case c of
@@ -264,15 +263,11 @@ whose guard is satisfied by `state`.
       [ (action, (loc', pgEffect pg action state))
       | (guard, action, loc') <- pgTransitions pg loc
       , guard state ]
-```
-
-``` {.haskell .literate}
   }
 ```
 
-Now, if we can express our system as a program graph, we can do model
-checking on it! Next, we will work through an example to see this in
-action.
+We can use this conversion function to check properties of our soda
+machine program.
 
 # Checking soda machine invariants
 
@@ -283,7 +278,7 @@ the number of sodas, and the number of beers all add up to a constant
 number: `max_sodas + max_beers`.
 
 ``` {.haskell .literate}
-soda_machine_invariant_1 :: Int -> Int -> Proposition (Either SodaMachineLoc (Cond SodaMachineVar Int))
+soda_machine_invariant_1 :: Int -> Int -> Proposition (Either SodaMachineLoc (StateCondition SodaMachineVar Int))
 soda_machine_invariant_1 max_sodas max_beers =
   atom (Right (\state ->
     state ! NumCoins + state ! NumSodas + state ! NumBeers ==
@@ -304,7 +299,7 @@ fix this by restricting the invariant so it only applies when we are in
 the `Start` state:
 
 ``` {.haskell .literate}
-soda_machine_invariant_2 :: Int -> Int -> Proposition (Either SodaMachineLoc (Cond SodaMachineVar Int))
+soda_machine_invariant_2 :: Int -> Int -> Proposition (Either SodaMachineLoc (StateCondition SodaMachineVar Int))
 soda_machine_invariant_2 max_sodas max_beers =
   atom (Left Start) .-> soda_machine_invariant_1 max_sodas max_beers
 ```

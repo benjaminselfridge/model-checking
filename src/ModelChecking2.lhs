@@ -20,8 +20,8 @@ location, we associate a collection of *guarded transitions*. A guarded
 transition is a triple `(guard, action, loc)`. Intuitively, the idea is: "If
 `guard` is true of the current global state, then modify the state by performing
 `action` and go to location `loc`." When a guard is satisified in a given state,
-the corresponding transition system is said to be *enabled*. When multiple
-transitions are enabled, one of them is chosen nondeterministically.
+the corresponding transition is said to be *enabled*. When multiple transitions
+are enabled, one of them is chosen nondeterministically.
 
 We will call this construction a *program graph*. To define it in Haskell, we
 first define a couple auxiliary notions.
@@ -30,9 +30,9 @@ The *state* of a program is a mapping from variables to values.
 
 > type State var val = Map var val
 
-A *condition* is a predicate over the `State`.
+A *state condition* is a predicate over the `State`.
 
-> type Cond var val = State var val -> Bool
+> type StateCondition var val = State var val -> Bool
 
 An *effect* is a state transformation, which modifies the state in some way.
 
@@ -42,7 +42,7 @@ Finally, a *program graph* is defined by a set of guarded transitions, a set of
 initial locations, and an initial state.
 
 > data ProgramGraph loc action var val = ProgramGraph
->   { pgTransitions :: loc -> [(Cond var val, action, loc)]
+>   { pgTransitions :: loc -> [(StateCondition var val, action, loc)]
 >   , pgEffect :: action -> Effect var val
 >   , pgInitialLocations :: [loc]
 >   , pgInitialState :: State var val
@@ -67,18 +67,18 @@ customer may push the "Return Coin" button, and his coin is returned to him.
 
 Before defining the soda machine program graph, we first introduce a few
 functions that will make the process feel a bit more like writing imperative
-code. The following operators are convenient for constructing conditions:
+code. The following operators are convenient for constructing state conditions:
 
-> unconditionally :: Cond var val
+> unconditionally :: StateCondition var val
 > unconditionally = const True
 >
-> (!==) :: (Ord var, Eq val) => var -> val -> Cond var val
+> (!==) :: (Ord var, Eq val) => var -> val -> StateCondition var val
 > (var !== val) state = state ! var == val
 >
-> (!>) :: (Ord var, Ord val) => var -> val -> Cond var val
+> (!>) :: (Ord var, Ord val) => var -> val -> StateCondition var val
 > (var !> val) state = state ! var > val
 >
-> (!<) :: (Ord var, Ord val) => var -> val -> Cond var val
+> (!<) :: (Ord var, Ord val) => var -> val -> StateCondition var val
 > (var !< val) state = state ! var < val
 
 And the following operators are convenient for constructing effects:
@@ -142,7 +142,7 @@ unconditionally returns the coin.
 >                 , ( NumBeers !> 0  , GetBeer   , Start )
 >                 , ( unconditionally, ReturnCoin, Start ) ]
 
-Now, for each action, we define what effect it has on the program state:
+Now, for each action, we define the effect it has on the program state:
 
 >   , pgEffect = \action -> case action of
 >       InsertCoin     -> NumCoins +=: 1
@@ -167,7 +167,7 @@ that converts a program graph to a transition system.
 
 > pgToTS :: Eq loc
 >        => ProgramGraph loc action var val
->        -> TransitionSystem (loc, State var val) action (Either loc (Cond var val))
+>        -> TransitionSystem (loc, State var val) action (Either loc (StateCondition var val))
 
 For a program graph with locations `loc`, variables `var`, and values `val`, the
 states of the corresponding transition system will be pairs `(loc, State var
@@ -191,8 +191,8 @@ initial state of the program graph.
 >                       | loc <- pgInitialLocations pg ]
 
 Each `(loc, state)` pair is is labeled with the proposition that is `True` for
-location `loc` and no other locations, and is also `True` for all conditions
-that are satisfied by `state`.
+location `loc` and no other locations, and is also `True` for all state
+conditions that are satisfied by `state`.
 
 >   , tsLabel = \(loc, state) c -> case c of
 >       Left loc' -> loc == loc'
@@ -206,11 +206,10 @@ satisfied by `state`.
 >       [ (action, (loc', pgEffect pg action state))
 >       | (guard, action, loc') <- pgTransitions pg loc
 >       , guard state ]
-
 >   }
 
-Now, if we can express our system as a program graph, we can do model checking
-on it! Next, we will work through an example to see this in action.
+We can use this conversion function to check properties of our soda machine
+program.
 
 Checking soda machine invariants
 ================================
@@ -221,7 +220,7 @@ particular, we would like to know that the number of coins, the number of sodas,
 and the number of beers all add up to a constant number: `max_sodas +
 max_beers`.
 
-> soda_machine_invariant_1 :: Int -> Int -> Proposition (Either SodaMachineLoc (Cond SodaMachineVar Int))
+> soda_machine_invariant_1 :: Int -> Int -> Proposition (Either SodaMachineLoc (StateCondition SodaMachineVar Int))
 > soda_machine_invariant_1 max_sodas max_beers =
 >   atom (Right (\state ->
 >     state ! NumCoins + state ! NumSodas + state ! NumBeers ==
@@ -239,7 +238,7 @@ Aha! Our stated property actually doesn't hold. Immediately after the customer
 inserts a coin, the system is in an inconsistent state. We can fix this by
 restricting the invariant so it only applies when we are in the `Start` state:
 
-> soda_machine_invariant_2 :: Int -> Int -> Proposition (Either SodaMachineLoc (Cond SodaMachineVar Int))
+> soda_machine_invariant_2 :: Int -> Int -> Proposition (Either SodaMachineLoc (StateCondition SodaMachineVar Int))
 > soda_machine_invariant_2 max_sodas max_beers =
 >   atom (Left Start) .-> soda_machine_invariant_1 max_sodas max_beers
 

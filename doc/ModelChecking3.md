@@ -73,6 +73,6 @@ process = ProgramGraph
 ```
 
 ``` {.haskell .literate}
-crit_invariant :: Proposition (Either (ProcessLoc, ProcessLoc) (Cond Lock Bool))
+crit_invariant :: Proposition (Either (ProcessLoc, ProcessLoc) (StateCondition Lock Bool))
 crit_invariant = not (atom (Left (Crit, Crit)))
 ```

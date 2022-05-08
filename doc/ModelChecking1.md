@@ -100,17 +100,16 @@ and a list of outgoing transitions for each state.
 ```
 
 For each transition `(action, s')`, `s'` is the next state, and `action`
-is a name (not necessarily unique) for the transition. The `action` will
-not be used in this post other than as a convenient way to label the
-transitions, but it will be more useful in subsequent posts.
+is a name (not necessarily unique) for the transition. The `action` type
+variable will be instantiated to `()` in this post, but it will be more
+useful in subsequent posts.
 
 # Propositions
 
 The whole point of model checking is to determine whether a transition
 system satisfies a given property. In order to to state such a property,
-we will need the notion of a logical proposition. I formalize this as a
-function that maps `TruthAssignment`s to `Bool`s; the idea is that for a
-fixed `TruthAssignment`, a proposition either holds or does not hold.
+we will need the notion of a logical proposition, which is a function
+from `TruthAssignment`s to `Bool`s.
 
 ``` {.haskell .literate}
 type Proposition ap = TruthAssignment ap -> Bool
@@ -166,31 +165,22 @@ not :: Proposition ap -> Proposition ap
 not p f = P.not (f |= p)
 
 (.->) :: Proposition ap -> Proposition ap -> Proposition ap
-p .-> q = not p .| q
+(p .-> q) f = if f |= p then f |= q else True
 ```
-
-In other words, the assignment `f` satisfies the proposition `p` and `q`
-whenever `f |= p` and `f |= q`; likewise for the other operators.
 
 # Checking invariants
 
-In the previous section, we defined the notion of a truth assignment,
-which is a function from variables to truth values. We also defined the
-notion of a proposition, which is a property that either holds or does
-not holds for a given assignment. Given a transition system `ts` and a
-proposition `p`, we can ask: "Does `p` hold at all reachable states in
-`ts`?" Stated in terms of the definitions above, we are asking, for each
-reachable state `s` of `ts`, whether `tsLabel ts s |= p`. A proposition
-which is supposed to hold at all reachable states of a transition system
-is called an *invariant*.
+Given a transition system `ts` and a proposition `p`, we can ask: "Does
+`p` hold at all reachable states in `ts`?" A proposition which is
+supposed to hold at all reachable states of a transition system is
+called an *invariant*.
 
 So, how do we check whether an invariant holds? The answer is simple: we
-search the underlying graph of the transition system, and evaluate the
-proposition on each state (more precisely, on the *label* of each
-state). To do this, we first define an auxiliary function that collects
-all reachable states in the graph, along with a path that leads to each
-state, given the start states and a function mapping each state to its
-list of possible next states.
+just evaluate the proposition on each reachable state (more precisely,
+on the *label* of each state). To do this, we first define an auxiliary
+function that collects all reachable states in the underlying graph,
+along with a path that leads to each state, given the start states and a
+function mapping each state to its list of possible next states.
 
 ``` {.haskell .literate}
 reachables :: Eq s => [s] -> (s -> [s]) -> [(s, [s])]

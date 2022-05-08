@@ -262,7 +262,7 @@
 <span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a>  , pgInitialLocations <span class="ot">=</span> [ <span class="dt">NonCrit</span> ]</span>
 <span id="cb8-12"><a href="#cb8-12" aria-hidden="true" tabindex="-1"></a>  , pgInitialState <span class="ot">=</span> fromList [ (<span class="dt">Lock</span>, <span class="dt">False</span>) ]</span>
 <span id="cb8-13"><a href="#cb8-13" aria-hidden="true" tabindex="-1"></a>  }</span></code></pre></div>
-<div class="sourceCode" id="cb9"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="ot">crit_invariant ::</span> <span class="dt">Proposition</span> (<span class="dt">Either</span> (<span class="dt">ProcessLoc</span>, <span class="dt">ProcessLoc</span>) (<span class="dt">Cond</span> <span class="dt">Lock</span> <span class="dt">Bool</span>))</span>
+<div class="sourceCode" id="cb9"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="ot">crit_invariant ::</span> <span class="dt">Proposition</span> (<span class="dt">Either</span> (<span class="dt">ProcessLoc</span>, <span class="dt">ProcessLoc</span>) (<span class="dt">StateCondition</span> <span class="dt">Lock</span> <span class="dt">Bool</span>))</span>
 <span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>crit_invariant <span class="ot">=</span> <span class="fu">not</span> (atom (<span class="dt">Left</span> (<span class="dt">Crit</span>, <span class="dt">Crit</span>)))</span></code></pre></div>
 </body>
 </html>
