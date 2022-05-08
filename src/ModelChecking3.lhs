@@ -1,13 +1,15 @@
 Now...
 
 > module ModelChecking3 where
->
+
 > import ModelChecking1
 > import ModelChecking2
->
-> import Data.Map.Strict ((!), unionWithKey, insert, fromList)
 
-Do a thing
+> import Data.Map.Strict ((!), unionWithKey, insert, fromList)
+> import Prelude hiding (not)
+
+Interleaving
+============
 
 > (|||) :: (Ord var, Show var, Eq val)
 >       => ProgramGraph loc1 action1 var val
@@ -30,8 +32,6 @@ Do a thing
 > data ProcessLoc = NonCrit | Wait | Crit
 >   deriving (Eq, Show, Ord)
 
-If the lock is set, 
-
 > data ProcessAction = StartWaiting | SetLock | UnsetLock
 >   deriving (Eq, Show, Ord)
 
@@ -50,4 +50,6 @@ If the lock is set,
 >   , pgInitialLocations = [ NonCrit ]
 >   , pgInitialState = fromList [ (Lock, False) ]
 >   }
->
+
+> crit_invariant :: Proposition (Either (ProcessLoc, ProcessLoc) (Cond Lock Bool))
+> crit_invariant = not (atom (Left (Crit, Crit)))

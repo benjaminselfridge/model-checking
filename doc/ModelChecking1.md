@@ -175,7 +175,8 @@ search the underlying graph of the transition system, and evaluate the
 proposition on each state (more precisely, on the *label* of each
 state). To do this, we first define an auxiliary function that collects
 all reachable states in the graph, along with a path that leads to each
-state.
+state, given the start states and a function mapping each state to its
+list of possible next states.
 
 ``` {.haskell .literate}
 reachables :: Eq s => [s] -> (s -> [s]) -> [(s, [s])]

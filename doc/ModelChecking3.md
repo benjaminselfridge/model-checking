@@ -2,18 +2,25 @@
 title: "Model Checking in Haskell, Part 3: Parallelism"
 ---
 
+-   [[1]{.toc-section-number} Interleaving](#interleaving)
+
 Now...
 
 ``` {.haskell .literate}
 module ModelChecking3 where
-
-import ModelChecking1
-import ModelChecking2
-
-import Data.Map.Strict ((!), unionWithKey, insert, fromList)
 ```
 
-Do a thing
+``` {.haskell .literate}
+import ModelChecking1
+import ModelChecking2
+```
+
+``` {.haskell .literate}
+import Data.Map.Strict ((!), unionWithKey, insert, fromList)
+import Prelude hiding (not)
+```
+
+# Interleaving
 
 ``` {.haskell .literate}
 (|||) :: (Ord var, Show var, Eq val)
@@ -40,8 +47,6 @@ data ProcessLoc = NonCrit | Wait | Crit
   deriving (Eq, Show, Ord)
 ```
 
-If the lock is set,
-
 ``` {.haskell .literate}
 data ProcessAction = StartWaiting | SetLock | UnsetLock
   deriving (Eq, Show, Ord)
@@ -65,4 +70,9 @@ process = ProgramGraph
   , pgInitialLocations = [ NonCrit ]
   , pgInitialState = fromList [ (Lock, False) ]
   }
+```
+
+``` {.haskell .literate}
+crit_invariant :: Proposition (Either (ProcessLoc, ProcessLoc) (Cond Lock Bool))
+crit_invariant = not (atom (Left (Crit, Crit)))
 ```

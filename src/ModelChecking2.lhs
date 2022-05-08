@@ -100,8 +100,10 @@ define our set of variables, locations, and actions:
 
 > data SodaMachineVar = NumCoins | NumSodas | NumBeers
 >   deriving (Show, Eq, Ord)
+
 > data SodaMachineLoc = Start | Select
 >   deriving (Show, Eq, Ord)
+
 > data SodaMachineAction = InsertCoin
 >                        | GetBeer
 >                        | GetSoda
@@ -140,8 +142,7 @@ unconditionally returns the coin.
 >                 , ( NumBeers !> 0  , GetBeer   , Start )
 >                 , ( unconditionally, ReturnCoin, Start ) ]
 
-The machine starts in location `Start`, and is initially full of both soda and
-beer.
+Now, for each action, we define what effect it has on the program state:
 
 >   , pgEffect = \action -> case action of
 >       InsertCoin     -> NumCoins +=: 1
@@ -149,6 +150,9 @@ beer.
 >       GetBeer        -> NumBeers -=: 1
 >       ReturnCoin     -> NumCoins -=: 1
 >       ServiceMachine -> reset initial
+
+The machine starts in location `Start`, and is initially full of both soda and
+beer.
 
 >   , pgInitialLocations = [Start]
 >   , pgInitialState = initial
@@ -217,9 +221,10 @@ and the number of beers all add up to a constant number: `max_sodas +
 max_beers`.
 
 > soda_machine_invariant_1 :: Int -> Int -> Proposition (Either SodaMachineLoc (Cond SodaMachineVar Int))
-> soda_machine_invariant_1 max_sodas max_beers f =
->   f (Right (\state -> state ! NumCoins + state ! NumSodas + state ! NumBeers ==
->                       max_sodas + max_beers))
+> soda_machine_invariant_1 max_sodas max_beers =
+>   atom (Right (\state ->
+>     state ! NumCoins + state ! NumSodas + state ! NumBeers ==
+>     max_sodas + max_beers))
 
 Let's check this property of our soda machine in ghci! We'll use a maximum
 capacity of `2` for both soda and beer:

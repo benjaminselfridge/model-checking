@@ -143,7 +143,8 @@ So, how do we check whether an invariant holds? The answer is simple: we search
 the underlying graph of the transition system, and evaluate the proposition on
 each state (more precisely, on the *label* of each state). To do this, we first
 define an auxiliary function that collects all reachable states in the graph,
-along with a path that leads to each state.
+along with a path that leads to each state, given the start states and a
+function mapping each state to its list of possible next states.
 
 > reachables :: Eq s => [s] -> (s -> [s]) -> [(s, [s])]
 > reachables starts = go [] (zip starts (repeat []))
@@ -170,7 +171,7 @@ time. It's not a very interesting property, but it's a good one for any traffic
 light to have.
 
 ``` {.haskell}
-  > data Color = Red | Green | Yellow deriving (Show, Eq)
+  > data Color = Red | Green | Yellow deriving (Show, Eq, Ord)
   > ts = TransitionSystem [Red] (\s -> case s of Red -> [Green]; Green -> [Yellow]; Yellow -> [Red]) (==)
 ```
 
