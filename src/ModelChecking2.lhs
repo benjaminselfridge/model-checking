@@ -17,8 +17,8 @@ Our first task will be to define a very simple imperative programming language.
 Our program representation will consist of a set of *locations*, which can be
 thought of (roughly) as a line of code in a language like C. With each such
 location, we associate a collection of *guarded transitions*. A guarded
-transition is a triple `(guard, effect, loc)`. Intuitively, the idea is: "If
-`guard` is true of the current global state, then modify the state with `effect`
+transition is a triple `(guard, action, loc)`. Intuitively, the idea is: "If
+`guard` is true of the current global state, then modify the state with `action`
 and go to location `loc`."
 
 A guarded transition is a directed edge from one program location to another,
@@ -39,24 +39,32 @@ A *condition* is a predicate over the `State`.
 
 > type Cond var val = State var val -> Bool
 
+An *effect* is a state transformation, which modifies the state in some way.
+
+> type Effect var val = State var val -> State var val
+
 Finally, a *program graph* is defined by a set of guarded transitions, a set of
 initial locations, and an initial state.
 
-> data ProgramGraph loc var val = ProgramGraph
->   { pgTransitions :: loc -> [(Cond var val, State var val -> State var val, loc)]
+> data ProgramGraph loc action var val = ProgramGraph
+>   { pgTransitions :: loc -> [(Cond var val, action, loc)]
+>   , pgEffect :: action -> Effect var val
 >   , pgInitialLocations :: [loc]
 >   , pgInitialState :: State var val
 >   }
+
+The `action` type is a name for each effect, and the `pgEffect` field maps each
+action to its corresponding `Effect`.
 
 Program Graphs to Transition Systems
 ====================================
 
 We'd like to check properties of imperative programs using the machinery
-developed in the previous post. In order to do that, we first need to write a
-function that converts a program graph to a transition system.
+developed in the previous post. First, though, we'll need to write a function
+that converts a program graph to a transition system.
 
 > pgToTS :: Eq loc
->        => ProgramGraph loc var val
+>        => ProgramGraph loc action var val
 >        -> TransitionSystem (loc, State var val) (Either loc (Cond var val))
 
 For a program graph with locations `loc`, variables `var`, and values `val`, the
@@ -66,8 +74,8 @@ where we are in the program (the `loc`ation), and 2) what the concrete `State`s
 of the global variables are.
 
 The set of atomic propositions will consist of which location we are currently
-in, as well as the set of all guards we could possibly define over the current state.
-This will allow us to state a very broad class of properties to check.
+in, as well as the set of all guards we could possibly define over the current
+state. This will allow us to state a very broad class of properties to check.
 
 Let's walk through the definition of `pgToTS`.
 
@@ -81,12 +89,13 @@ initial state of the program graph.
 >                  | loc <- pgInitialLocations pg ]
 
 Given a state `(loc, state)` in our transition system, we have an outgoing
-transition system for every transition in the program graph from `loc` whose
-guard is satisfied by `state`.
+transition for every transition in the program graph from `loc` whose guard is
+satisfied by `state`.
 
 >   , tsTransitions = \(loc, state) ->
->       [ (loc', action state) | (guard, action, loc') <- pgTransitions pg loc
->                              , guard state ]
+>       [ (loc', pgEffect pg action state)
+>       | (guard, action, loc') <- pgTransitions pg loc
+>       , guard state ]
 
 Finally, each `(loc, state)` pair is is labeled with the proposition that is
 `True` for location `loc` and no other locations, and is also `True` for all
@@ -99,6 +108,8 @@ conditions that are satisfied by `state`.
 
 Now, if we can express our system as a program graph, we can do model checking
 on it! Next, we will work through an example to see this in action.
+
+> 
 
 Example: Soda Machine
 =====================
@@ -125,11 +136,18 @@ define our set of variables and locations:
 >   deriving (Show, Eq, Ord)
 > data SodaMachineLoc = Start | Select
 >   deriving (Show, Eq, Ord)
+> data SodaMachineAction = InsertCoin
+>                        | GetBeer
+>                        | GetSoda
+>                        | ReturnCoin
+>                        | ServiceMachine
+>   deriving (Show, Eq, Ord)
 
 Now, for a specified maximum capacity for both drinks, we can define a soda
 machine as follows:
 
-> soda_machine :: Int -> Int -> ProgramGraph SodaMachineLoc SodaMachineVar Int
+> soda_machine :: Int -> Int
+>              -> ProgramGraph SodaMachineLoc SodaMachineAction SodaMachineVar Int
 
 All three variables are integer-valued, so we can use `Int` as the value type
 for our program graph. Let's walk through the definition of each field in
@@ -148,30 +166,37 @@ of coins in the machine. If the technician services the machine, we return the
 machine to the initial state `init`, setting the number of coins to `0` and
 filling the beers and sodas to the maximum capacity.
 
->       Start -> [ (const True, adjust (+1) NumCoins, Select)
->                , (const True, const init, Start) ]
+>       Start -> [ (const True, InsertCoin, Select)
+>                , (const True, ServiceMachine, Start) ]
 
 If the number of sodas is positive, then the customer can select a soda, at
 which point the number of sodas is decremented and the machine goes to location
 `Start`.
 
 >       Select -> [ ( \state -> state ! NumSodas > 0
->                   , adjust (subtract 1) NumSodas
+>                   , GetSoda
 >                   , Start )
 
 Similarly, the user may select a beer if the number of beers is positive.
 
 >                 , ( \state -> state ! NumBeers > 0
->                   , adjust (subtract 1) NumBeers
+>                   , GetBeer
 >                   , Start )
 
 Finally, the user may press the "return coin" button after inserting a coin, at
 which point the machine unconditionally returns the coin.
 
->                 , ( const True, adjust (subtract 1) NumCoins, Start) ]
+>                 , ( const True, ReturnCoin, Start) ]
 
 The machine starts in location `Start`, and is initially full of both soda and
 beer.
+
+>   , pgEffect = \action -> case action of
+>       InsertCoin -> adjust (+1) NumCoins
+>       GetSoda -> adjust (subtract 1) NumSodas
+>       GetBeer -> adjust (subtract 1) NumBeers
+>       ReturnCoin -> adjust (subtract 1) NumCoins
+>       ServiceMachine -> const init
 
 >   , pgInitialLocations = [Start]
 >   , pgInitialState = init
