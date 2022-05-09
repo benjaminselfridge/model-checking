@@ -17,11 +17,11 @@ Our first task will be to define a very simple imperative programming language.
 Our program representation will consist of a set of *locations*, which can be
 thought of (roughly) as a line of code in a language like C. With each such
 location, we associate a collection of *guarded transitions*. A guarded
-transition is a triple `(guard, action, loc)`. Intuitively, the idea is: "If
-`guard` is true of the current global state, then modify the state by performing
-`action` and go to location `loc`." When a guard is satisified in a given state,
-the corresponding transition is said to be *enabled*. When multiple transitions
-are enabled, one of them is chosen nondeterministically.
+transition is a triple `(guard, action, loc)`. If `guard` is true of the current
+global state, then modify the state by performing `action` and go to location
+`loc`." When a guard is satisified in a given state, the corresponding
+transition is said to be *enabled*. When multiple transitions are enabled, one
+of them is chosen nondeterministically.
 
 We will call this construction a *program graph*. To define it in Haskell, we
 first define a couple auxiliary notions.

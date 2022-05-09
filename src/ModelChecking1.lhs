@@ -39,30 +39,27 @@ Transition systems
 ==================
 
 So, what are these "models" we are checking? They are called _transition
-systems_. A transition system is a directed graph, where the vertices of the
-graph represent possible program states, and the edges represent transitions
-from one state to another. The transitions are followed nondeterministically;
-when a state has multiple outgoing transitions, that simply means that it can
-follow any of them. A transition system also has a nonempty set of _initial
-states_, which are the states that the system may start in.
+systems_. At a high level, a transition system is a model of any entity with a
+*mutable state* that we can ask questions about at any given moment in time.
+Such questions include:
 
-As we transition from one state to another (by following one of the edges),
-certain things may become true or false. We model this with a set of *atomic
-propositional variables* which are either true or false in every state. In
-Haskell, we represent this set of variables as a type (or a type variable `ap`),
-and we formalize the notion of a *truth assignment* as a function from this type
-to `Bool`:
+  * Hold old is Timmy?
+  * How many coins and sodas are in the soda machine?
+  * What is the value of the variable `x` in this computer program?
+
+Each such question is mapped to a single, boolean-valued *atomic propositional
+variable* from some pre-defined set of variables `ap`. Every state of the system
+is associated with a *truth assignment*, giving the value of every variable in
+that state:
 
 > type TruthAssignment ap = ap -> Bool
 
-The idea is that each state in our transition system is *labeled* with a truth
-assignment, identifying which atomic propositions hold. We can now define a
-transition system in Haskell:
+A transition system can also change from one state to another, causing the
+atomic propositional variables to change in value. In Haskell, we can define a
+transition system over a state set `s` and a set of atomic propositional
+variables `ap` as follows:
 
 > data TransitionSystem s action ap = TransitionSystem
-
-A transition system is a set of *initial* states,
-
 >   { tsInitialStates :: [s]
 
 a *labeling* of each state with a truth assignment,
@@ -74,10 +71,11 @@ and a list of outgoing transitions for each state.
 >   , tsTransitions :: s -> [(action, s)]
 >   }
 
-For each transition `(action, s')`, `s'` is the next state, and `action` is a
-name (not necessarily unique) for the transition. The `action` type variable
-will be instantiated to `()` in this post, but it will be more useful in
-subsequent posts.
+For a state `s`, and each transition `(action, s')` in `tsTransitions s`, `s'`
+is the new state when the transition is followed, and `action` is a name (not
+necessarily unique) for the transition. The `action` type variable will be
+instantiated to `()` in this post, but it will be more useful in subsequent
+posts.
 
 Propositions
 ============
