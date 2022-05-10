@@ -26,8 +26,8 @@ instance (ActionLabel a, ActionLabel b) => ActionLabel (Either a b) where
 
 instance ActionLabel ProcessAction where
   actionLabel StartWaiting = "start waiting"
-  actionLabel SetLock = "set lock"
-  actionLabel UnsetLock = "unset lock"
+  actionLabel EnterCrit = "enter crit"
+  actionLabel ExitCrit = "exit crit"
 
 tsDotGraph :: (Ord s, GV.Labellable s, ActionLabel action) => TransitionSystem s action ap -> GV.DotGraph Node
 tsDotGraph ts = GV.graphElemsToDot params nodes edges
@@ -69,3 +69,10 @@ instance GV.Labellable (ProcessLoc, State Lock Bool) where
 instance GV.Labellable ((ProcessLoc, ProcessLoc), State Lock Bool) where
   toLabelValue ((loc1, loc2), state) = GV.toLabelValue $
     "(" ++ show loc1 ++ "," ++ show loc2 ++ "): <lock=" ++ show (state ! Lock) ++ ">"
+
+instance GV.Labellable ((ProcessLoc, ProcessLoc), State PetersonVar Bool) where
+  toLabelValue ((loc1, loc2), state) = GV.toLabelValue $
+    "(" ++ show loc1 ++ "," ++ show loc2 ++ "): " ++
+    "<b1=" ++ show (state ! B1) ++ ", " ++
+    "b2=" ++ show (state ! B2) ++ ", " ++
+    "x=" ++ show (state ! X) ++ ">"

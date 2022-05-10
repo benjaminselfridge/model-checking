@@ -12,7 +12,11 @@ title: "Model Checking in Haskell, Part 2: From Programs to Transition
     invariants](#checking-soda-machine-invariants)
 -   [[5]{.toc-section-number} Conclusion](#conclusion)
 
-In this post, we'll talk about how to convert an imperative computer
+{-\# OPTIONS_GHC -Wno-unrecognised-pragmas \#-} {-\# HLINT ignore "Use
+camelCase" \#-} {-\# OPTIONS_GHC -Wno-unrecognised-pragmas \#-} {-\#
+HLINT ignore "Use camelCase" \#-} {-\# OPTIONS_GHC
+-Wno-unrecognised-pragmas \#-} {-\# HLINT ignore "Use camelCase" \#-} In
+this post, we'll talk about how to convert an imperative computer
 program into a transition system. We'll then look at an example program,
 and show how to use this conversion routine to check interesting
 invariants about the program's behavior.
@@ -51,7 +55,7 @@ type State var val = Map var val
 A *state condition* is a predicate over the `State`.
 
 ``` {.haskell .literate}
-type StateCondition var val = State var val -> Bool
+type StatePredicate var val = Predicate (State var val)
 ```
 
 An *effect* is a state transformation, which modifies the state in some
@@ -66,7 +70,7 @@ set of initial locations, and an initial state.
 
 ``` {.haskell .literate}
 data ProgramGraph loc action var val = ProgramGraph
-  { pgTransitions :: loc -> [(StateCondition var val, action, loc)]
+  { pgTransitions :: loc -> [(StatePredicate var val, action, loc)]
   , pgEffect :: action -> Effect var val
   , pgInitialLocations :: [loc]
   , pgInitialState :: State var val
@@ -97,17 +101,20 @@ imperative code. The following operators are convenient for constructing
 state conditions:
 
 ``` {.haskell .literate}
-unconditionally :: StateCondition var val
+unconditionally :: StatePredicate var val
 unconditionally = const True
 
-(!==) :: (Ord var, Eq val) => var -> val -> StateCondition var val
+(!==) :: (Ord var, Eq val) => var -> val -> StatePredicate var val
 (var !== val) state = state ! var == val
+infix 4 !==
 
-(!>) :: (Ord var, Ord val) => var -> val -> StateCondition var val
+(!>) :: (Ord var, Ord val) => var -> val -> StatePredicate var val
 (var !> val) state = state ! var > val
+infix 4 !>
 
-(!<) :: (Ord var, Ord val) => var -> val -> StateCondition var val
+(!<) :: (Ord var, Ord val) => var -> val -> StatePredicate var val
 (var !< val) state = state ! var < val
+infix 4 !<
 ```
 
 And the following operators are convenient for constructing effects:
@@ -115,12 +122,15 @@ And the following operators are convenient for constructing effects:
 ``` {.haskell .literate}
 (=:) :: Ord var => var -> val -> Effect var val
 (=:) = insert
+infix 2 =:
 
 (+=:) :: (Ord var, Num val) => var -> val -> Effect var val
 var +=: val = adjust (+val) var
+infix 2 +=:
 
 (-=:) :: (Ord var, Num val) => var -> val -> Effect var val
 var -=: val = adjust (subtract val) var
+infix 2 -=:
 
 reset :: State var val -> Effect var val
 reset = const
@@ -215,7 +225,7 @@ function that converts a program graph to a transition system.
 ``` {.haskell .literate}
 pgToTS :: Eq loc
        => ProgramGraph loc action var val
-       -> TransitionSystem (loc, State var val) action (Either loc (StateCondition var val))
+       -> TransitionSystem (loc, State var val) action (Either loc (StatePredicate var val))
 ```
 
 For a program graph with locations `loc`, variables `var`, and values
@@ -278,7 +288,7 @@ the number of sodas, and the number of beers all add up to a constant
 number: `max_sodas + max_beers`.
 
 ``` {.haskell .literate}
-soda_machine_invariant_1 :: Int -> Int -> Proposition (Either SodaMachineLoc (StateCondition SodaMachineVar Int))
+soda_machine_invariant_1 :: Int -> Int -> Proposition (Either SodaMachineLoc (StatePredicate SodaMachineVar Int))
 soda_machine_invariant_1 max_sodas max_beers =
   atom (Right (\state ->
     state ! NumCoins + state ! NumSodas + state ! NumBeers ==
@@ -299,7 +309,7 @@ fix this by restricting the invariant so it only applies when we are in
 the `Start` state:
 
 ``` {.haskell .literate}
-soda_machine_invariant_2 :: Int -> Int -> Proposition (Either SodaMachineLoc (StateCondition SodaMachineVar Int))
+soda_machine_invariant_2 :: Int -> Int -> Proposition (Either SodaMachineLoc (StatePredicate SodaMachineVar Int))
 soda_machine_invariant_2 max_sodas max_beers =
   atom (Left Start) .-> soda_machine_invariant_1 max_sodas max_beers
 ```

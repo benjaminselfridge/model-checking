@@ -5,11 +5,14 @@ title: "Model Checking in Haskell, Part 1: Transition Systems and
 
 -   [[1]{.toc-section-number} Overview](#overview)
 -   [[2]{.toc-section-number} Transition systems](#transition-systems)
--   [[3]{.toc-section-number} Propositions](#propositions)
--   [[4]{.toc-section-number} Checking invariants](#checking-invariants)
--   [[5]{.toc-section-number} Example: Traffic
+-   [[3]{.toc-section-number} Example: Traffic
     light](#example-traffic-light)
--   [[6]{.toc-section-number} Conclusion](#conclusion)
+-   [[4]{.toc-section-number} Predicates and
+    propositions](#predicates-and-propositions)
+-   [[5]{.toc-section-number} Checking invariants](#checking-invariants)
+-   [[6]{.toc-section-number} Checking a traffic light
+    invariant](#checking-a-traffic-light-invariant)
+-   [[7]{.toc-section-number} Conclusion](#conclusion)
 
 Recently, I've been reading a
 [book](https://www.amazon.com/Principles-Model-Checking-MIT-Press/dp/026202649X/ref=sr_1_1?crid=2RGC1B0N79HIJ&keywords=principles+of+model+checking&qid=1651762001&sprefix=principles+of+model+checking%2Caps%2C134&sr=8-1)
@@ -39,129 +42,153 @@ Preamble:
 module ModelChecking1 where
 
 import Data.List (nubBy, find)
-import Prelude hiding (not)
-import qualified Prelude as P
 ```
 
 # Overview
 
-In this post, I will introduce the notion of a transition system, and we
-will state simple properties about them, called *invariants*. We will
+In this post, we will introduce the notion of a transition system, and
+we will state simple properties about them, called *invariants*. We will
 also implement a simple model checking algorithm, whose aim is to check
 that an invariant holds for all reachable states of the system.
 
 # Transition systems
 
-So, what are these "models" we are checking? They are called *transition
-systems*. At a high level, a transition system is a model of any entity
-with a *mutable state* that we can ask questions about at any given
-moment in time. Such questions include:
-
--   Hold old is Timmy?
--   How many coins and sodas are in the soda machine?
--   What is the value of the variable `x` in this computer program?
-
-Each such question is mapped to a single, boolean-valued *atomic
-propositional variable* from some pre-defined set of variables `ap`.
-Every state of the system is associated with a *truth assignment*,
-giving the value of every variable in that state:
-
-``` {.haskell .literate}
-type TruthAssignment ap = ap -> Bool
-```
-
-A transition system can also change from one state to another, causing
-the atomic propositional variables to change in value. In Haskell, we
-can define a transition system over a state set `s` and a set of atomic
-propositional variables `ap` as follows:
+Let `s`, `action`, and `ap` be arbitrary Haskell types. Then a
+*transition system* over state set `s`, action set `action`, and atomic
+propositions `ap` is defined as follows:
 
 ``` {.haskell .literate}
 data TransitionSystem s action ap = TransitionSystem
   { tsInitialStates :: [s]
-```
-
-a *labeling* of each state with a truth assignment,
-
-``` {.haskell .literate}
-  , tsLabel :: s -> TruthAssignment ap
-```
-
-and a list of outgoing transitions for each state.
-
-``` {.haskell .literate}
-  , tsTransitions :: s -> [(action, s)]
+  , tsLabel         :: s -> Predicate ap
+  , tsTransitions   :: s -> [(action, s)]
   }
 ```
 
-For a state `s`, and each transition `(action, s')` in
-`tsTransitions s`, `s'` is the new state when the transition is
-followed, and `action` is a name (not necessarily unique) for the
-transition. The `action` type variable will be instantiated to `()` in
-this post, but it will be more useful in subsequent posts.
-
-# Propositions
-
-The whole point of model checking is to determine whether a transition
-system satisfies a given property. In order to to state such a property,
-we will need the notion of a logical proposition, which is a function
-from `TruthAssignment`s to `Bool`s.
+A `Predicate` is simply a `Bool`ean-valued function:
 
 ``` {.haskell .literate}
-type Proposition ap = TruthAssignment ap -> Bool
+type Predicate a = a -> Bool
 ```
 
-With this type, we can define propositional satisfaction as function
-application:
+Let `ts :: TransitionSystem s action ap` be a transition system, and let
+`s :: s` and `ap :: ap`. The intuition behind each of the three fields
+of `ts` are:
+
+-   `tsInitialStates ts`: "the states that the system can start in"
+-   `tsLabel ts s ap`: "whether `ap` is true in state `s`"
+-   `tsTransitions ts s`: "all possible next states after `s`"
+
+The label of a state is an abstraction of the "internal data" of that
+state, and the transitions are an abstraction of control flow.
+
+# Example: Traffic light
+
+We can create a very simple transition system representing the states
+and transitions of a traffic light. The states `s` will be the colors
+red, yellow, and green:
 
 ``` {.haskell .literate}
-(|=) :: TruthAssignment ap -> Proposition ap -> Bool
-f |= p = p f
+data Color = Red | Green | Yellow deriving (Show, Eq, Ord)
 ```
 
-If `f` is an assignment and `p` is a proposition, `f |= p` is read as "f
-satisfies p".
+We will use `()` for the `action` type in this example. The atomic
+propositions `ap` will also be `Color`; this will allow us to ask which
+color is on in each state.
 
-A very simple proposition is `true`, which holds for all assignments:
+Finally, our set of transitions will allow `Red` to transition to
+`Green`, `Green` to `Yellow`, and `Yellow` to `Red`:
 
 ``` {.haskell .literate}
-true :: Proposition ap
+traffic_light :: TransitionSystem Color () Color
+traffic_light = TransitionSystem
+  { tsInitialStates = [Red]
+  , tsLabel = \s -> (s ==)
+  , tsTransitions = \s -> case s of
+      Red    -> [((), Green )]
+      Green  -> [((), Yellow)]
+      Yellow -> [((), Red   )]
+  }
+```
+
+The label of each state `s` is `(s ==)`: the only color that is on in
+state `s` is `s` itself. We can check this in `ghci`:
+
+``` {.haskell}
+  > tsLabel traffic_light Red Red     -- is Red on in state Red?
+  True
+  > tsLabel traffic_light Red Green   -- is Green on in state Red?
+  False
+  > tsLabel traffic_light Green Green -- is Green on in state Green?
+  True
+```
+
+# Predicates and propositions
+
+Recall that a *predicate* is any boolean-valued function. We can define
+the *satisfaction* operator `|=` as
+
+``` {.haskell .literate}
+(|=) :: a -> Predicate a -> Bool
+a |= p = p a
+infix 0 |=
+```
+
+`a |= p` is read as "a satisfies p". A very simple predicate is `true`,
+which holds for all inputs:
+
+``` {.haskell .literate}
+true :: Predicate a
 true _ = True
 ```
 
-Similarly, `false` holds for no assignments:
+Similarly, `false` holds for no inputs:
 
 ``` {.haskell .literate}
-false :: Proposition ap
+false :: Predicate a
 false _ = False
 ```
 
-Given an atomic propositional variable `p`, we can form the proposition
-"`p` holds" as follows:
-
-``` {.haskell .literate}
-atom :: ap -> Proposition ap
-atom ap f = f ap
-```
-
-For an assignment `f : ap -> Bool`, `atom ap f` will be `True` if and
-only if `f` assigns variable `ap` to `True`.
-
-We can define the usual boolean operators on propositions in terms of
+We can define the usual boolean operators on predicates in terms of
 satisfaction:
 
 ``` {.haskell .literate}
-(.&) :: Proposition ap -> Proposition ap -> Proposition ap
-(p .& q) f = (f |= p) && (f |= q)
+(.&) :: Predicate a -> Predicate a -> Predicate a
+(p .& q) a = (a |= p) && (a |= q)
+infixr 3 .&
 
-(.|) :: Proposition ap -> Proposition ap -> Proposition ap
-(p .| q) f = (f |= p) || (f |= q)
+(.|) :: Predicate a -> Predicate a -> Predicate a
+(p .| q) a = (a |= p) || (a |= q)
+infixr 2 .|
 
-not :: Proposition ap -> Proposition ap
-not p f = P.not (f |= p)
+pnot :: Predicate a -> Predicate a
+pnot p a = not (a |= p)
 
-(.->) :: Proposition ap -> Proposition ap -> Proposition ap
-(p .-> q) f = if f |= p then f |= q else True
+(.->) :: Predicate a -> Predicate a -> Predicate a
+(p .-> q) a = if a |= p then a |= q else True
+infixr 1 .->
 ```
+
+In order to state properties about the states in our transition systems,
+we will need the notion of a *proposition*. A `Proposition` is a
+predicate about predicates:
+
+``` {.haskell .literate}
+type Proposition a = Predicate (Predicate a)
+```
+
+Given an atomic propositional variable `ap`, we can form the proposition
+"`ap` holds" as follows:
+
+``` {.haskell .literate}
+atom :: a -> Proposition a
+atom ap f = f ap
+```
+
+For a predicate `f : ap -> Bool`, `atom ap f` will be `True` if and only
+if `f` assigns variable `ap` to `True`. When a transition system is in
+state `s`, we can ask whether `tsLabel s |= p`, which is the same as
+asking "is `p` true in state `s`?"
 
 # Checking invariants
 
@@ -170,12 +197,12 @@ Given a transition system `ts` and a proposition `p`, we can ask: "Does
 supposed to hold at all reachable states of a transition system is
 called an *invariant*.
 
-So, how do we check whether an invariant holds? The answer is simple: we
-just evaluate the proposition on each reachable state (more precisely,
-on the *label* of each state). To do this, we first define an auxiliary
-function that collects all reachable states in the underlying graph,
-along with a path that leads to each state, given the start states and a
-function mapping each state to its list of possible next states.
+To check whether an invariant holds, we evaluate the proposition on each
+reachable state (more precisely, on the *label* of each state). To do
+this, we first define an auxiliary function that collects all reachable
+states in the underlying graph, along with a path that leads to each
+state, given the start states and a function mapping each state to its
+list of possible next states.
 
 ``` {.haskell .literate}
 reachables :: Eq s => [s] -> (s -> [s]) -> [(s, [s])]
@@ -194,54 +221,21 @@ and make sure the invariant holds for each of their labels, producing a
 path to a bad state if there is one:
 
 ``` {.haskell .literate}
-checkInvariant :: Eq s => Proposition ap -> TransitionSystem s action ap -> Maybe [s]
+checkInvariant :: Eq s
+               => Proposition ap
+               -> TransitionSystem s action ap
+               -> Maybe [s]
 checkInvariant p ts =
   let rs = reachables (tsInitialStates ts) (map snd <$> tsTransitions ts)
-  in path <$> find (\(s,_) -> tsLabel ts s |= not p) rs
+  in path <$> find (\(s,_) -> tsLabel ts s |= pnot p) rs
   where path (s, ss) = reverse (s:ss)
 ```
 
-# Example: Traffic light
+# Checking a traffic light invariant
 
-Let's check our first model! The model will be a single traffic light,
-and we will make sure that the light is never red and green at the same
-time. It's not a very interesting property, but it's a good one for any
-traffic light to have.
-
-``` {.haskell .literate}
-data Color = Red | Green | Yellow deriving (Show, Eq, Ord)
-```
-
-``` {.haskell .literate}
-traffic_light :: TransitionSystem Color () Color
-traffic_light = TransitionSystem
-  { tsInitialStates = [Red]
-  , tsLabel = (==)
-  , tsTransitions = \s -> case s of
-      Red    -> [((), Green )]
-      Green  -> [((), Yellow)]
-      Yellow -> [((), Red   )]
-  }
-```
-
-Since the `action` doesn't matter for this example, we just use `()`.
-Notice that `Color` serves as both our state type *and* as our set of
-atomic propositional variables. The label of each state `s` is `(== s)`,
-meaning that only that color is `True`. We can check this in `ghci`:
-
-``` {.haskell}
-  > tsLabel traffic_light Red Red     -- is Red true in state Red?
-  True
-  > tsLabel traffic_light Red Green   -- is Green true in state Red?
-  False
-  > tsLabel traffic_light Green Green -- is Green true in state Green?
-  True
-```
-
-Now, we would like to know that `Red` and `Green` are never true at the
-same time. It's trivial to see why this is true, because by
-construction, there isn't a state in our transition system that
-satisfies both `Red` and `Green`.
+Let's check an invariant of our traffic light system -- that the light
+is never red and green at the same time. It's not a very interesting
+invariant, but it's a good one for any traffic light to have.
 
 We can use our `checkInvariant` function to check that our invariant
 holds:

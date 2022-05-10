@@ -16,6 +16,7 @@ import ModelChecking2
 ```
 
 ``` {.haskell .literate}
+import Control.Arrow ((>>>))
 import Data.Map.Strict ((!), unionWithKey, insert, fromList)
 import Prelude hiding (not)
 ```
@@ -48,7 +49,7 @@ data ProcessLoc = NonCrit | Wait | Crit
 ```
 
 ``` {.haskell .literate}
-data ProcessAction = StartWaiting | SetLock | UnsetLock
+data ProcessAction = StartWaiting | EnterCrit | ExitCrit
   deriving (Eq, Show, Ord)
 ```
 
@@ -61,18 +62,62 @@ process :: ProgramGraph ProcessLoc ProcessAction Lock Bool
 process = ProgramGraph
   { pgTransitions = \loc -> case loc of
       NonCrit -> [ ( unconditionally, StartWaiting, Wait    ) ]
-      Wait    -> [ ( Lock !== False , SetLock     , Crit    ) ]
-      Crit    -> [ ( unconditionally, UnsetLock   , NonCrit ) ]
+      Wait    -> [ ( Lock !== False , EnterCrit   , Crit    ) ]
+      Crit    -> [ ( unconditionally, ExitCrit    , NonCrit ) ]
   , pgEffect = \action -> case action of
       StartWaiting -> id
-      SetLock      -> Lock =: True
-      UnsetLock    -> Lock =: False
+      EnterCrit    -> Lock =: True
+      ExitCrit     -> Lock =: False
   , pgInitialLocations = [ NonCrit ]
   , pgInitialState = fromList [ (Lock, False) ]
   }
 ```
 
 ``` {.haskell .literate}
-crit_invariant :: Proposition (Either (ProcessLoc, ProcessLoc) (StateCondition Lock Bool))
-crit_invariant = not (atom (Left (Crit, Crit)))
+data PetersonVar = B1
+                 | B2
+                 | X
+  deriving (Show, Eq, Ord)
+```
+
+``` {.haskell .literate}
+peterson_process_1 :: ProgramGraph ProcessLoc ProcessAction PetersonVar Bool
+peterson_process_1 = ProgramGraph
+  { pgTransitions = \loc -> case loc of
+      NonCrit -> [ ( unconditionally            , StartWaiting, Wait    ) ]
+      Wait    -> [ ( X !== False .| B2 !== False, EnterCrit   , Crit    ) ]
+      Crit    -> [ ( unconditionally            , ExitCrit    , NonCrit ) ]
+  , pgEffect = \action -> case action of
+      StartWaiting -> B1 =: True >>> X =: True
+      EnterCrit    -> id
+      ExitCrit     -> B1 =: False
+  , pgInitialLocations = [ NonCrit ]
+  , pgInitialState = fromList [ (B1, False), (B2, False), (X, False) ]
+  }
+```
+
+``` {.haskell .literate}
+peterson_process_2 :: ProgramGraph ProcessLoc ProcessAction PetersonVar Bool
+peterson_process_2 = ProgramGraph
+  { pgTransitions = \loc -> case loc of
+      NonCrit -> [ ( unconditionally           , StartWaiting, Wait    ) ]
+      Wait    -> [ ( X !== True .| B1 !== False, EnterCrit   , Crit    ) ]
+      Crit    -> [ ( unconditionally           , ExitCrit    , NonCrit ) ]
+  , pgEffect = \action -> case action of
+      StartWaiting -> B2 =: True >>> X =: False
+      EnterCrit    -> id
+      ExitCrit     -> B2 =: False
+  , pgInitialLocations = [ NonCrit ]
+  , pgInitialState = fromList [ (B1, False), (B2, False), (X, False) ]
+  }
+```
+
+``` {.haskell .literate}
+peterson :: ProgramGraph (ProcessLoc, ProcessLoc) (Either ProcessAction ProcessAction) PetersonVar Bool
+peterson = peterson_process_1 ||| peterson_process_2
+
+handshake :: TransitionSystem s1 action ap
+          -> TransitionSystem s1 action ap
+          -> TransitionSystem (s1, s2) action ap
+handshake ts1 ts2 = undefined
 ```
