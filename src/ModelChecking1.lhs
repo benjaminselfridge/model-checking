@@ -17,10 +17,10 @@ computer program, sequential circuit, or even something in the "real world"
 like to hold about *all possible behaviors* of the model. Finally, we check
 whether this property holds for the model, using a variety of nifty algorithms.
 
-This series of blog posts is an attempt to formalize some of the core notions
-and algorithms of model checking in Haskell. I hope it provides a brief and
-illustrative introduction for other Haskell programmers who are curious about
-the topic.
+This series of blog posts constitutes a brief and very high-level introduction
+to model checking, using Haskell code to express the ideas and implement the
+algorithms. The intended audience is anyone who knows a bit of Haskell, and who
+wants to understand what model checking is all about.
 
 This post was generated with `pandoc` from a [literate haskell
 document](https://github.com/benjaminselfridge/model-checking/blob/master/src/ModelChecking1.lhs).
@@ -30,6 +30,7 @@ Preamble:
 > module ModelChecking1 where
 >
 > import Data.List (nubBy, find)
+> import System.Random (RandomGen, randomR)
 
 Overview
 --------
@@ -104,6 +105,54 @@ is `s` itself. We can check this in `ghci`:
   True
 ```
 
+"Running" a transition system
+-----------------------------
+
+A *run* of a transition system is a finite or infinite path in the underlying
+graph:
+
+> data Run s action = Run s [(action, s)]
+>   deriving (Show)
+
+In the transitions systems we'll define, it will be useful to be able to examine
+random infinite runs of the system to get a feel for what the possibilites are:
+
+> randomRun :: RandomGen g => g -> TransitionSystem s action ap -> Run s action
+> randomRun g ts = let (i, g') = randomR (0, length (tsInitialStates ts)) g
+>                      s = tsInitialStates ts !! i
+>                  in Run s (randomRun' g' s ts)
+>   where randomRun' g s ts = let nexts = tsTransitions ts s
+>                                 (i, g') = randomR (0, length nexts - 1) g
+>                                 (action, s') = nexts !! i
+>                             in (action, s') : randomRun' g s' ts
+
+We also define a version of `take` that works on infinite `Run`s, so that we can
+easily look at finite prefixes:
+
+> takeRun :: Int -> Run s action -> Run s action
+> takeRun n (Run s transitions) = Run s (take n transitions)
+
+We can put this function to the test on our `traffic_light` example in `ghci`:
+
+```{.haskell}
+  > import System.Random
+  > g = mkStdGen 0
+  > takeRun 6 (randomRun g traffic_light)
+  Run Red [((),Green),((),Yellow),((),Red),((),Green),((),Yellow),((),Red)]
+```
+
+Because each state in `traffic_light` has exactly one outgoing transition, this
+is the only run we will ever get. In subsequent posts, we'll look at
+nondeterministic transition systems, and it will be helpful to look at random
+runs to get a sense for the different possibilities.
+
+It will be useful to be able to construct `Run`s in reverse:
+
+> reverseRun :: s -> [(action, s)] -> Run s action
+> reverseRun s prefix = go [] s prefix
+>   where go suffix s [] = Run s prefix
+>         go suffix s ((action, s'):prefix) = go ((action, s):suffix) s' prefix
+
 Predicates and propositions
 ---------------------------
 
@@ -153,7 +202,7 @@ Given an atomic propositional variable `ap`, we can form the proposition "`ap`
 holds" as follows:
 
 > atom :: a -> Proposition a
-> atom ap f = f ap
+> atom ap f = ap |= f
 
 For a predicate `f : ap -> Bool`, `atom ap f` will be `True` if and only if `f`
 assigns variable `ap` to `True`. When a transition system is in state `s`, we
@@ -170,18 +219,20 @@ reachable states of a transition system is called an *invariant*.
 To check whether an invariant holds, we evaluate the proposition on each
 reachable state (more precisely, on the *label* of each state). To do this, we
 first define an auxiliary function that collects all reachable states in the
-underlying graph, along with a path that leads to each state, given the start
+underlying graph, along with a run that leads to each state, given the start
 states and a function mapping each state to its list of possible next states.
 
-> reachables :: Eq s => [s] -> (s -> [s]) -> [(s, [s])]
-> reachables starts = go [] (zip starts (repeat []))
->   where go visited [] _ = nubBy (\x y -> fst x == fst y) visited
->         go visited starts transitions =
->           let nexts = [ (s', s:path)
+> reachables :: Eq s => [s] -> (s -> [(action, s)]) -> [(s, Run s action)]
+> reachables starts transitions = f <$> go [] (zip starts (repeat []))
+>   where go visited [] = nubBy (\x y -> fst x == fst y) visited
+>         go visited starts =
+>           let nexts = [ (s', (action, s):path)
 >                       | (s, path) <- starts
->                       , s' <- transitions s
+>                       , (action, s') <- transitions s
 >                       , s' `notElem` map fst visited ]
->           in go (visited ++ starts) nexts transitions
+>           in go (visited ++ starts) nexts
+>
+>         f (s, trace) = (s, reverseRun s trace)
 
 Now, to check an invariant, we simply collect all the reachable states and make
 sure the invariant holds for each of their labels, producing a path to a bad
@@ -190,11 +241,10 @@ state if there is one:
 > checkInvariant :: Eq s
 >                => Proposition ap
 >                -> TransitionSystem s action ap
->                -> Maybe [s]
+>                -> Maybe (Run s action)
 > checkInvariant p ts =
->   let rs = reachables (tsInitialStates ts) (map snd <$> tsTransitions ts)
->   in path <$> find (\(s,_) -> tsLabel ts s |= pnot p) rs
->   where path (s, ss) = reverse (s:ss)
+>   let rs = reachables (tsInitialStates ts) (tsTransitions ts)
+>   in snd <$> find (\(s,_) -> tsLabel ts s |= pnot p) rs
 
 Checking a traffic light invariant
 ----------------------------------

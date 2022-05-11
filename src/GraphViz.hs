@@ -35,9 +35,11 @@ instance ActionLabel BookingEvent where
   actionLabel PrintCmd = "print_cmd"
   actionLabel Print = "print"
 
-tsDotGraph :: (Ord s, GV.Labellable s, ActionLabel action) => TransitionSystem s action ap -> GV.DotGraph Node
+tsDotGraph :: (Ord s, GV.Labellable s, ActionLabel action)
+           => TransitionSystem s action ap
+           -> GV.DotGraph Node
 tsDotGraph ts = GV.graphElemsToDot params nodes edges
-  where nodes = [ (i, s) | ((s, _), i) <- zip (reachables (tsInitialStates ts) (map snd <$> tsTransitions ts)) [0..] ]
+  where nodes = [ (i, s) | ((s, _), i) <- zip (reachables (tsInitialStates ts) (tsTransitions ts)) [0..] ]
         edges = [ (i, i', actionLabel action) | (i, s) <- nodes
                                               , (action, s') <- tsTransitions ts s
                                               , let i' = fromJust (lookup s' nodesToIds) ]
