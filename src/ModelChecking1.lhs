@@ -1,4 +1,10 @@
-Recently, I've been reading a
+---
+layout: page
+title:  "Model Checking in Haskell, Part 1: Transition Systems and Invariants"
+categories: haskell mathematics
+---
+
+I've been reading a
 [book](https://www.amazon.com/Principles-Model-Checking-MIT-Press/dp/026202649X/ref=sr_1_1?crid=2RGC1B0N79HIJ&keywords=principles+of+model+checking&qid=1651762001&sprefix=principles+of+model+checking%2Caps%2C134&sr=8-1)
 and watching a [lecture
 series](https://www.youtube.com/watch?v=Y5Hg4MvUXc4&list=PLwabKnOFhE38C0o6z_bhlF_uOUlblDTjh)
@@ -16,7 +22,7 @@ and algorithms of model checking in Haskell. I hope it provides a brief and
 illustrative introduction for other Haskell programmers who are curious about
 the topic.
 
-This post is a [literate haskell
+This post was generated with `pandoc` from a [literate haskell
 document](https://github.com/benjaminselfridge/model-checking/blob/master/src/ModelChecking1.lhs).
 
 Preamble:
@@ -26,7 +32,7 @@ Preamble:
 > import Data.List (nubBy, find)
 
 Overview
-========
+--------
 
 In this post, we will introduce the notion of a transition system, and we will
 state simple properties about them, called *invariants*. We will also implement
@@ -34,7 +40,7 @@ a simple model checking algorithm, whose aim is to check that an invariant holds
 for all reachable states of the system.
 
 Transition systems
-==================
+------------------
 
 Let `s`, `action`, and `ap` be arbitrary Haskell types. Then a *transition
 system* over state set `s`, action set `action`, and atomic propositions `ap` is
@@ -61,7 +67,7 @@ The label of a state is an abstraction of the "internal data" of that state, and
 the transitions are an abstraction of control flow.
 
 Example: Traffic light
-======================
+----------------------
 
 We can create a very simple transition system representing the states and
 transitions of a traffic light. The states `s` will be the colors red, yellow,
@@ -99,7 +105,7 @@ is `s` itself. We can check this in `ghci`:
 ```
 
 Predicates and propositions
-============
+---------------------------
 
 Recall that a *predicate* is any boolean-valued function. We can define the
 *satisfaction* operator `|=` as
@@ -155,7 +161,7 @@ can ask whether `tsLabel s |= p`, which is the same as asking "is `p` true in
 state `s`?"
 
 Checking invariants
-===================
+-------------------
 
 Given a transition system `ts` and a proposition `p`, we can ask: "Does `p` hold
 at all reachable states in `ts`?" A proposition which is supposed to hold at all
@@ -191,13 +197,13 @@ state if there is one:
 >   where path (s, ss) = reverse (s:ss)
 
 Checking a traffic light invariant
-==================================
+----------------------------------
 
 Let's check an invariant of our traffic light system -- that the light is never
 red and green at the same time. It's not a very interesting invariant, but it's
 a good one for any traffic light to have.
 
-We can use our `checkInvariant` function to check that our invariant holds:
+We can use our `checkInvariant` function to check that this invariant holds:
 
 ``` {.haskell}
   > checkInvariant (not (atom Red .& atom Green)) traffic_light
@@ -225,7 +231,7 @@ reachable?
 ```
 
 Conclusion
-==========
+----------
 
 Hopefully, this first post gave you a taste of what model checking is all about.
 In the next post, we'll talk about how to convert higher-level program to

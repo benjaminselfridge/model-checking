@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="generator" content="pandoc" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
-  <title>Model Checking in Haskell, Part 2: From Programs to Transition Systems</title>
+  <title>ModelChecking2</title>
   <style>
     html {
       line-height: 1.5;
@@ -212,25 +212,14 @@
   <![endif]-->
 </head>
 <body>
-<header id="title-block-header">
-<h1 class="title">Model Checking in Haskell, Part 2: From Programs to Transition Systems</h1>
-</header>
-<nav id="TOC" role="doc-toc">
-<ul>
-<li><a href="#program-graphs"><span class="toc-section-number">1</span> Program Graphs</a></li>
-<li><a href="#example-soda-machine"><span class="toc-section-number">2</span> Example: Soda Machine</a></li>
-<li><a href="#program-graphs-to-transition-systems"><span class="toc-section-number">3</span> Program Graphs to Transition Systems</a></li>
-<li><a href="#checking-soda-machine-invariants"><span class="toc-section-number">4</span> Checking soda machine invariants</a></li>
-<li><a href="#conclusion"><span class="toc-section-number">5</span> Conclusion</a></li>
-</ul>
-</nav>
-<p>{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-} {-# HLINT ignore “Use camelCase” #-} {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-} {-# HLINT ignore “Use camelCase” #-} {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-} {-# HLINT ignore “Use camelCase” #-} In this post, we’ll talk about how to convert an imperative computer program into a transition system. We’ll then look at an example program, and show how to use this conversion routine to check interesting invariants about the program’s behavior.</p>
+<h1 id="model-checking-in-haskell-part-2-from-programs-to-transition-systems">Model Checking in Haskell, Part 2: From Programs to Transition Systems</h1>
+<p>In this post, we’ll talk about how to convert an imperative computer program into a transition system. We’ll then look at an example program, and show how to use this conversion routine to check interesting invariants about the program’s behavior.</p>
 <p>Preamble:</p>
 <div class="sourceCode" id="cb1"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">module</span> <span class="dt">ModelChecking2</span> <span class="kw">where</span></span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> <span class="dt">ModelChecking1</span></span>
 <span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> <span class="dt">Data.Map.Strict</span> (<span class="dt">Map</span>, (!), fromList, adjust, insert)</span></code></pre></div>
-<h1 data-number="1" id="program-graphs"><span class="header-section-number">1</span> Program Graphs</h1>
+<h2 id="program-graphs">Program Graphs</h2>
 <p>Our first task will be to define a very simple imperative programming language. Our program representation will consist of a set of <em>locations</em>, which can be thought of (roughly) as a line of code in a language like C. With each such location, we associate a collection of <em>guarded transitions</em>. A guarded transition is a triple <code>(guard, action, loc)</code>. If <code>guard</code> is true of the current global state, then modify the state by performing <code>action</code> and go to location <code>loc</code>." When a guard is satisified in a given state, the corresponding transition is said to be <em>enabled</em>. When multiple transitions are enabled, one of them is chosen nondeterministically.</p>
 <p>We will call this construction a <em>program graph</em>. To define it in Haskell, we first define a couple auxiliary notions.</p>
 <p>The <em>state</em> of a program is a mapping from variables to values.</p>
@@ -247,7 +236,7 @@
 <span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>  ,<span class="ot"> pgInitialState ::</span> <span class="dt">State</span> var val</span>
 <span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>  }</span></code></pre></div>
 <p>The <code>action</code> type is a name for each effect, and the <code>pgEffect</code> field maps each action to its corresponding <code>Effect</code>.</p>
-<h1 data-number="2" id="example-soda-machine"><span class="header-section-number">2</span> Example: Soda Machine</h1>
+<h2 id="example-soda-machine">Example: Soda Machine</h2>
 <p>Let’s write a program that simulates a soda machine. The machine contains two types of drinks: soda, and beer. Each of them costs a single coin.</p>
 <p>There are three variables in our program: the number of coins in the machine, the number of sodas in the machine, and the number of beers in the machine. We have two locations in our program: <code>Start</code> and <code>Select</code>. In <code>Start</code>, the machine is idle, waiting for a customer to insert a coin, or for a technician to collect the coins and refill the beverages. In <code>Select</code>, the customer has inserted a coin, and the machine can either dispense a soda or a beer. Alternatively, the customer may push the “Return Coin” button, and his coin is returned to him.</p>
 <p>Before defining the soda machine program graph, we first introduce a few functions that will make the process feel a bit more like writing imperative code. The following operators are convenient for constructing state conditions:</p>
@@ -317,7 +306,7 @@
 <div class="sourceCode" id="cb15"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a>  , pgInitialLocations <span class="ot">=</span> [<span class="dt">Start</span>]</span>
 <span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>  , pgInitialState <span class="ot">=</span> initial</span>
 <span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>  }</span></code></pre></div>
-<h1 data-number="3" id="program-graphs-to-transition-systems"><span class="header-section-number">3</span> Program Graphs to Transition Systems</h1>
+<h2 id="program-graphs-to-transition-systems">Program Graphs to Transition Systems</h2>
 <p>We’d like to check properties of imperative programs using the machinery developed in the previous post. First, though, we’ll need to write a function that converts a program graph to a transition system.</p>
 <div class="sourceCode" id="cb16"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="ot">pgToTS ::</span> <span class="dt">Eq</span> loc</span>
 <span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a>       <span class="ot">=&gt;</span> <span class="dt">ProgramGraph</span> loc action var val</span>
@@ -340,7 +329,7 @@
 <span id="cb20-4"><a href="#cb20-4" aria-hidden="true" tabindex="-1"></a>      , guard state ]</span>
 <span id="cb20-5"><a href="#cb20-5" aria-hidden="true" tabindex="-1"></a>  }</span></code></pre></div>
 <p>We can use this conversion function to check properties of our soda machine program.</p>
-<h1 data-number="4" id="checking-soda-machine-invariants"><span class="header-section-number">4</span> Checking soda machine invariants</h1>
+<h2 id="checking-soda-machine-invariants">Checking soda machine invariants</h2>
 <p>One property we would like our soda machine to have is that the number of coins is consistent with the current number of sodas and beers in the machine. In particular, we would like to know that the number of coins, the number of sodas, and the number of beers all add up to a constant number: <code>max_sodas + max_beers</code>.</p>
 <div class="sourceCode" id="cb21"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="ot">soda_machine_invariant_1 ::</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Proposition</span> (<span class="dt">Either</span> <span class="dt">SodaMachineLoc</span> (<span class="dt">StatePredicate</span> <span class="dt">SodaMachineVar</span> <span class="dt">Int</span>))</span>
 <span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a>soda_machine_invariant_1 max_sodas max_beers <span class="ot">=</span></span>
@@ -358,7 +347,7 @@
 <div class="sourceCode" id="cb24"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a>  <span class="op">&gt;</span> checkInvariant (soda_machine_invariant_2 <span class="dv">2</span> <span class="dv">2</span>) (pgToTS (soda_machine <span class="dv">2</span> <span class="dv">2</span>))</span>
 <span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">Nothing</span></span></code></pre></div>
 <p>Wonderful! Now we know that whenever the machine is in the <code>Start</code> state, the number of coins is equal to the number of sodas and beers that were purchased.</p>
-<h1 data-number="5" id="conclusion"><span class="header-section-number">5</span> Conclusion</h1>
+<h2 id="conclusion">Conclusion</h2>
 <p>In this post, we explored how to convert a higher-level imperative “program graph”, with a global state and guarded transitions, can be “compiled” or “reified” into a transition system. We walked through an example program graph representing a soda machine, converted this graph to a transition system, and checked an invariant of that system to show that our machine has a nice property.</p>
 <p>In the next post, we’ll explore how a few techniques for modeling concurrent processes.</p>
 </body>

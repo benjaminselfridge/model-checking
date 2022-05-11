@@ -88,8 +88,58 @@ Interleaving
 > peterson :: ProgramGraph (ProcessLoc, ProcessLoc) (Either ProcessAction ProcessAction) PetersonVar Bool
 > peterson = peterson_process_1 ||| peterson_process_2
 >
-> handshake :: TransitionSystem s1 action ap
->           -> TransitionSystem s1 action ap
->           -> TransitionSystem (s1, s2) action ap
-> handshake ts1 ts2 = undefined
+> handshake :: Eq action
+>           => [action]
+>           -> TransitionSystem s1 action ap1
+>           -> TransitionSystem s2 action ap2
+>           -> TransitionSystem (s1, s2) action (Either ap1 ap2)
+> handshake h ts1 ts2 = TransitionSystem
+>   { tsInitialStates = [ (s1, s2) | s1 <- tsInitialStates ts1
+>                                  , s2 <- tsInitialStates ts2 ]
+>   , tsLabel = \(s1, s2) p -> case p of
+>       Left  p1 -> tsLabel ts1 s1 p1
+>       Right p2 -> tsLabel ts2 s2 p2
+>   , tsTransitions = \(s1, s2) ->
+>       [ (action, (s1', s2))  | (action, s1') <- tsTransitions ts1 s1
+>                              , action `notElem` h ] ++
+>       [ (action, (s1, s2'))  | (action, s2') <- tsTransitions ts2 s2
+>                              , action `notElem` h ] ++
+>       [ (action, (s1', s2')) | (action , s1') <- tsTransitions ts1 s1
+>                              , (action', s2') <- tsTransitions ts2 s2
+>                              , action == action' ]
+>   }
+>
+> data BookingEvent = Scan | Store | PrintCmd | Print
+>   deriving (Show, Eq, Ord)
+>
+> bar_code_reader :: TransitionSystem Int BookingEvent Int
+> bar_code_reader = TransitionSystem
+>   { tsInitialStates = [0]
+>   , tsLabel = (==)
+>   , tsTransitions = \s -> case s of
+>       0 -> [(Scan , 1)]
+>       1 -> [(Store, 0)]
+>   }
+>
+> booking_program :: TransitionSystem Int BookingEvent Int
+> booking_program = TransitionSystem
+>   { tsInitialStates = [0]
+>   , tsLabel = (==)
+>   , tsTransitions = \s -> case s of
+>       0 -> [(Store, 1)]
+>       1 -> [(PrintCmd, 0)]
+>   }
+>
+> printer :: TransitionSystem Int BookingEvent Int
+> printer = TransitionSystem
+>   { tsInitialStates = [0]
+>   , tsLabel = (==)
+>   , tsTransitions = \s -> case s of
+>       0 -> [(PrintCmd, 1)]
+>       1 -> [(Print, 0)]
+>   }
+>
+> booking = handshake [Print]
+>   (handshake [Store] bar_code_reader booking_program)
+>   printer
 >

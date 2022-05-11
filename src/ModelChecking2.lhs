@@ -1,9 +1,6 @@
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
-{-# HLINT ignore "Use camelCase" #-}
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
-{-# HLINT ignore "Use camelCase" #-}
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
-{-# HLINT ignore "Use camelCase" #-}
+Model Checking in Haskell, Part 2: From Programs to Transition Systems
+======================================================================
+
 In this post, we'll talk about how to convert an imperative computer program
 into a transition system. We'll then look at an example program, and show how to
 use this conversion routine to check interesting invariants about the program's
@@ -17,7 +14,7 @@ Preamble:
 > import Data.Map.Strict (Map, (!), fromList, adjust, insert)
 
 Program Graphs
-==============
+--------------
 
 Our first task will be to define a very simple imperative programming language.
 Our program representation will consist of a set of *locations*, which can be
@@ -58,7 +55,7 @@ The `action` type is a name for each effect, and the `pgEffect` field maps each
 action to its corresponding `Effect`.
 
 Example: Soda Machine
-=====================
+---------------------
 
 Let's write a program that simulates a soda machine. The machine contains two
 types of drinks: soda, and beer. Each of them costs a single coin.
@@ -171,7 +168,7 @@ beer.
 >   }
 
 Program Graphs to Transition Systems
-====================================
+------------------------------------
 
 We'd like to check properties of imperative programs using the machinery
 developed in the previous post. First, though, we'll need to write a function
@@ -224,7 +221,7 @@ We can use this conversion function to check properties of our soda machine
 program.
 
 Checking soda machine invariants
-================================
+--------------------------------
 
 One property we would like our soda machine to have is that the number of coins
 is consistent with the current number of sodas and beers in the machine. In
@@ -265,7 +262,7 @@ Wonderful! Now we know that whenever the machine is in the `Start` state, the
 number of coins is equal to the number of sodas and beers that were purchased.
 
 Conclusion
-==========
+----------
 
 In this post, we explored how to convert a higher-level imperative "program
 graph", with a global state and guarded transitions, can be "compiled" or

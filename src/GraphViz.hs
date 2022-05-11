@@ -29,6 +29,12 @@ instance ActionLabel ProcessAction where
   actionLabel EnterCrit = "enter crit"
   actionLabel ExitCrit = "exit crit"
 
+instance ActionLabel BookingEvent where
+  actionLabel Scan = "scan"
+  actionLabel Store = "store"
+  actionLabel PrintCmd = "print_cmd"
+  actionLabel Print = "print"
+
 tsDotGraph :: (Ord s, GV.Labellable s, ActionLabel action) => TransitionSystem s action ap -> GV.DotGraph Node
 tsDotGraph ts = GV.graphElemsToDot params nodes edges
   where nodes = [ (i, s) | ((s, _), i) <- zip (reachables (tsInitialStates ts) (map snd <$> tsTransitions ts)) [0..] ]
@@ -76,3 +82,9 @@ instance GV.Labellable ((ProcessLoc, ProcessLoc), State PetersonVar Bool) where
     "<b1=" ++ show (state ! B1) ++ ", " ++
     "b2=" ++ show (state ! B2) ++ ", " ++
     "x=" ++ show (state ! X) ++ ">"
+
+instance GV.Labellable (Int, Int) where
+  toLabelValue (x, y) = GV.toLabelValue $ show (x, y)
+
+instance GV.Labellable ((Int, Int), Int) where
+  toLabelValue ((x, y), z) = GV.toLabelValue $ show (x, y, z)

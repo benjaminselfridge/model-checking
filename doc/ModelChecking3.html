@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="generator" content="pandoc" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
-  <title>Model Checking in Haskell, Part 3: Parallelism</title>
+  <title>ModelChecking3</title>
   <style>
     html {
       line-height: 1.5;
@@ -212,14 +212,6 @@
   <![endif]-->
 </head>
 <body>
-<header id="title-block-header">
-<h1 class="title">Model Checking in Haskell, Part 3: Parallelism</h1>
-</header>
-<nav id="TOC" role="doc-toc">
-<ul>
-<li><a href="#interleaving"><span class="toc-section-number">1</span> Interleaving</a></li>
-</ul>
-</nav>
 <p>Now…</p>
 <div class="sourceCode" id="cb1"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">module</span> <span class="dt">ModelChecking3</span> <span class="kw">where</span></span></code></pre></div>
 <div class="sourceCode" id="cb2"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> <span class="dt">ModelChecking1</span></span>
@@ -227,7 +219,7 @@
 <div class="sourceCode" id="cb3"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> <span class="dt">Control.Arrow</span> ((&gt;&gt;&gt;))</span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> <span class="dt">Data.Map.Strict</span> ((!), unionWithKey, insert, fromList)</span>
 <span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> <span class="dt">Prelude</span> <span class="kw">hiding</span> (not)</span></code></pre></div>
-<h1 data-number="1" id="interleaving"><span class="header-section-number">1</span> Interleaving</h1>
+<h1 id="interleaving">Interleaving</h1>
 <div class="sourceCode" id="cb4"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="ot">(|||) ::</span> (<span class="dt">Ord</span> var, <span class="dt">Show</span> var, <span class="dt">Eq</span> val)</span>
 <span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>      <span class="ot">=&gt;</span> <span class="dt">ProgramGraph</span> loc1 action1 var val</span>
 <span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>      <span class="ot">-&gt;</span> <span class="dt">ProgramGraph</span> loc2 action2 var val</span>
@@ -296,9 +288,59 @@
 <div class="sourceCode" id="cb12"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="ot">peterson ::</span> <span class="dt">ProgramGraph</span> (<span class="dt">ProcessLoc</span>, <span class="dt">ProcessLoc</span>) (<span class="dt">Either</span> <span class="dt">ProcessAction</span> <span class="dt">ProcessAction</span>) <span class="dt">PetersonVar</span> <span class="dt">Bool</span></span>
 <span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>peterson <span class="ot">=</span> peterson_process_1 <span class="op">|||</span> peterson_process_2</span>
 <span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a><span class="ot">handshake ::</span> <span class="dt">TransitionSystem</span> s1 action ap</span>
-<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>          <span class="ot">-&gt;</span> <span class="dt">TransitionSystem</span> s1 action ap</span>
-<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a>          <span class="ot">-&gt;</span> <span class="dt">TransitionSystem</span> (s1, s2) action ap</span>
-<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a>handshake ts1 ts2 <span class="ot">=</span> <span class="fu">undefined</span></span></code></pre></div>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a><span class="ot">handshake ::</span> <span class="dt">Eq</span> action</span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>          <span class="ot">=&gt;</span> [action]</span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a>          <span class="ot">-&gt;</span> <span class="dt">TransitionSystem</span> s1 action ap1</span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a>          <span class="ot">-&gt;</span> <span class="dt">TransitionSystem</span> s2 action ap2</span>
+<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a>          <span class="ot">-&gt;</span> <span class="dt">TransitionSystem</span> (s1, s2) action (<span class="dt">Either</span> ap1 ap2)</span>
+<span id="cb12-9"><a href="#cb12-9" aria-hidden="true" tabindex="-1"></a>handshake h ts1 ts2 <span class="ot">=</span> <span class="dt">TransitionSystem</span></span>
+<span id="cb12-10"><a href="#cb12-10" aria-hidden="true" tabindex="-1"></a>  { tsInitialStates <span class="ot">=</span> [ (s1, s2) <span class="op">|</span> s1 <span class="ot">&lt;-</span> tsInitialStates ts1</span>
+<span id="cb12-11"><a href="#cb12-11" aria-hidden="true" tabindex="-1"></a>                                 , s2 <span class="ot">&lt;-</span> tsInitialStates ts2 ]</span>
+<span id="cb12-12"><a href="#cb12-12" aria-hidden="true" tabindex="-1"></a>  , tsLabel <span class="ot">=</span> \(s1, s2) p <span class="ot">-&gt;</span> <span class="kw">case</span> p <span class="kw">of</span></span>
+<span id="cb12-13"><a href="#cb12-13" aria-hidden="true" tabindex="-1"></a>      <span class="dt">Left</span>  p1 <span class="ot">-&gt;</span> tsLabel ts1 s1 p1</span>
+<span id="cb12-14"><a href="#cb12-14" aria-hidden="true" tabindex="-1"></a>      <span class="dt">Right</span> p2 <span class="ot">-&gt;</span> tsLabel ts2 s2 p2</span>
+<span id="cb12-15"><a href="#cb12-15" aria-hidden="true" tabindex="-1"></a>  , tsTransitions <span class="ot">=</span> \(s1, s2) <span class="ot">-&gt;</span></span>
+<span id="cb12-16"><a href="#cb12-16" aria-hidden="true" tabindex="-1"></a>      [ (action, (s1&#39;, s2))  <span class="op">|</span> (action, s1&#39;) <span class="ot">&lt;-</span> tsTransitions ts1 s1</span>
+<span id="cb12-17"><a href="#cb12-17" aria-hidden="true" tabindex="-1"></a>                             , action <span class="ot">`notElem`</span> h ] <span class="op">++</span></span>
+<span id="cb12-18"><a href="#cb12-18" aria-hidden="true" tabindex="-1"></a>      [ (action, (s1, s2&#39;))  <span class="op">|</span> (action, s2&#39;) <span class="ot">&lt;-</span> tsTransitions ts2 s2</span>
+<span id="cb12-19"><a href="#cb12-19" aria-hidden="true" tabindex="-1"></a>                             , action <span class="ot">`notElem`</span> h ] <span class="op">++</span></span>
+<span id="cb12-20"><a href="#cb12-20" aria-hidden="true" tabindex="-1"></a>      [ (action, (s1&#39;, s2&#39;)) <span class="op">|</span> (action , s1&#39;) <span class="ot">&lt;-</span> tsTransitions ts1 s1</span>
+<span id="cb12-21"><a href="#cb12-21" aria-hidden="true" tabindex="-1"></a>                             , (action&#39;, s2&#39;) <span class="ot">&lt;-</span> tsTransitions ts2 s2</span>
+<span id="cb12-22"><a href="#cb12-22" aria-hidden="true" tabindex="-1"></a>                             , action <span class="op">==</span> action&#39; ]</span>
+<span id="cb12-23"><a href="#cb12-23" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb12-24"><a href="#cb12-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-25"><a href="#cb12-25" aria-hidden="true" tabindex="-1"></a><span class="kw">data</span> <span class="dt">BookingEvent</span> <span class="ot">=</span> <span class="dt">Scan</span> <span class="op">|</span> <span class="dt">Store</span> <span class="op">|</span> <span class="dt">PrintCmd</span> <span class="op">|</span> <span class="dt">Print</span></span>
+<span id="cb12-26"><a href="#cb12-26" aria-hidden="true" tabindex="-1"></a>  <span class="kw">deriving</span> (<span class="dt">Show</span>, <span class="dt">Eq</span>, <span class="dt">Ord</span>)</span>
+<span id="cb12-27"><a href="#cb12-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-28"><a href="#cb12-28" aria-hidden="true" tabindex="-1"></a><span class="ot">bar_code_reader ::</span> <span class="dt">TransitionSystem</span> <span class="dt">Int</span> <span class="dt">BookingEvent</span> <span class="dt">Int</span></span>
+<span id="cb12-29"><a href="#cb12-29" aria-hidden="true" tabindex="-1"></a>bar_code_reader <span class="ot">=</span> <span class="dt">TransitionSystem</span></span>
+<span id="cb12-30"><a href="#cb12-30" aria-hidden="true" tabindex="-1"></a>  { tsInitialStates <span class="ot">=</span> [<span class="dv">0</span>]</span>
+<span id="cb12-31"><a href="#cb12-31" aria-hidden="true" tabindex="-1"></a>  , tsLabel <span class="ot">=</span> (<span class="op">==</span>)</span>
+<span id="cb12-32"><a href="#cb12-32" aria-hidden="true" tabindex="-1"></a>  , tsTransitions <span class="ot">=</span> \s <span class="ot">-&gt;</span> <span class="kw">case</span> s <span class="kw">of</span></span>
+<span id="cb12-33"><a href="#cb12-33" aria-hidden="true" tabindex="-1"></a>      <span class="dv">0</span> <span class="ot">-&gt;</span> [(<span class="dt">Scan</span> , <span class="dv">1</span>)]</span>
+<span id="cb12-34"><a href="#cb12-34" aria-hidden="true" tabindex="-1"></a>      <span class="dv">1</span> <span class="ot">-&gt;</span> [(<span class="dt">Store</span>, <span class="dv">0</span>)]</span>
+<span id="cb12-35"><a href="#cb12-35" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb12-36"><a href="#cb12-36" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-37"><a href="#cb12-37" aria-hidden="true" tabindex="-1"></a><span class="ot">booking_program ::</span> <span class="dt">TransitionSystem</span> <span class="dt">Int</span> <span class="dt">BookingEvent</span> <span class="dt">Int</span></span>
+<span id="cb12-38"><a href="#cb12-38" aria-hidden="true" tabindex="-1"></a>booking_program <span class="ot">=</span> <span class="dt">TransitionSystem</span></span>
+<span id="cb12-39"><a href="#cb12-39" aria-hidden="true" tabindex="-1"></a>  { tsInitialStates <span class="ot">=</span> [<span class="dv">0</span>]</span>
+<span id="cb12-40"><a href="#cb12-40" aria-hidden="true" tabindex="-1"></a>  , tsLabel <span class="ot">=</span> (<span class="op">==</span>)</span>
+<span id="cb12-41"><a href="#cb12-41" aria-hidden="true" tabindex="-1"></a>  , tsTransitions <span class="ot">=</span> \s <span class="ot">-&gt;</span> <span class="kw">case</span> s <span class="kw">of</span></span>
+<span id="cb12-42"><a href="#cb12-42" aria-hidden="true" tabindex="-1"></a>      <span class="dv">0</span> <span class="ot">-&gt;</span> [(<span class="dt">Store</span>, <span class="dv">1</span>)]</span>
+<span id="cb12-43"><a href="#cb12-43" aria-hidden="true" tabindex="-1"></a>      <span class="dv">1</span> <span class="ot">-&gt;</span> [(<span class="dt">PrintCmd</span>, <span class="dv">0</span>)]</span>
+<span id="cb12-44"><a href="#cb12-44" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb12-45"><a href="#cb12-45" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-46"><a href="#cb12-46" aria-hidden="true" tabindex="-1"></a><span class="ot">printer ::</span> <span class="dt">TransitionSystem</span> <span class="dt">Int</span> <span class="dt">BookingEvent</span> <span class="dt">Int</span></span>
+<span id="cb12-47"><a href="#cb12-47" aria-hidden="true" tabindex="-1"></a>printer <span class="ot">=</span> <span class="dt">TransitionSystem</span></span>
+<span id="cb12-48"><a href="#cb12-48" aria-hidden="true" tabindex="-1"></a>  { tsInitialStates <span class="ot">=</span> [<span class="dv">0</span>]</span>
+<span id="cb12-49"><a href="#cb12-49" aria-hidden="true" tabindex="-1"></a>  , tsLabel <span class="ot">=</span> (<span class="op">==</span>)</span>
+<span id="cb12-50"><a href="#cb12-50" aria-hidden="true" tabindex="-1"></a>  , tsTransitions <span class="ot">=</span> \s <span class="ot">-&gt;</span> <span class="kw">case</span> s <span class="kw">of</span></span>
+<span id="cb12-51"><a href="#cb12-51" aria-hidden="true" tabindex="-1"></a>      <span class="dv">0</span> <span class="ot">-&gt;</span> [(<span class="dt">PrintCmd</span>, <span class="dv">1</span>)]</span>
+<span id="cb12-52"><a href="#cb12-52" aria-hidden="true" tabindex="-1"></a>      <span class="dv">1</span> <span class="ot">-&gt;</span> [(<span class="dt">Print</span>, <span class="dv">0</span>)]</span>
+<span id="cb12-53"><a href="#cb12-53" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb12-54"><a href="#cb12-54" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-55"><a href="#cb12-55" aria-hidden="true" tabindex="-1"></a>booking <span class="ot">=</span> handshake [<span class="dt">Print</span>]</span>
+<span id="cb12-56"><a href="#cb12-56" aria-hidden="true" tabindex="-1"></a>  (handshake [<span class="dt">Store</span>] bar_code_reader booking_program)</span>
+<span id="cb12-57"><a href="#cb12-57" aria-hidden="true" tabindex="-1"></a>  printer</span></code></pre></div>
 </body>
 </html>
