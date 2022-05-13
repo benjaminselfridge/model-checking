@@ -41,7 +41,7 @@ type State var val = Map var val
 A *state condition* is a predicate over the `State`.
 
 ``` haskell
-type StatePredicate var val = Predicate (State var val)
+type StatePredicate var val = State var val -> Bool
 ```
 
 An *effect* is a state transformation, which modifies the state in some
@@ -211,9 +211,15 @@ developed in the previous post. First, though, we’ll need to write a
 function that converts a program graph to a transition system.
 
 ``` haskell
+data PGProp loc ap = PGInLoc loc | PGStateProp ap
+```
+
+``` haskell
 pgToTS :: Eq loc
        => ProgramGraph loc action var val
-       -> TransitionSystem (loc, State var val) action (Either loc (StatePredicate var val))
+       -> [ap]
+       -> (ap -> StatePredicate var val)
+       -> TransitionSystem (loc, State var val) action (PGProp loc ap)
 ```
 
 For a program graph with locations `loc`, variables `var`, and values
@@ -230,7 +236,7 @@ of properties to check.
 Let’s walk through the definition of `pgToTS`.
 
 ``` haskell
-pgToTS pg = TransitionSystem
+pgToTS pg aps toPred = TransitionSystem
 ```
 
 The initial states of the transition system will be all pairs
@@ -247,9 +253,8 @@ Each `(loc, state)` pair is is labeled with the proposition that is
 all state conditions that are satisfied by `state`.
 
 ``` haskell
-  , tsLabel = \(loc, state) c -> case c of
-      Left loc' -> loc == loc'
-      Right cond -> cond state
+  , tsLabel = \(loc, state) -> PGInLoc loc :
+                               [ PGStateProp ap | ap <- aps, toPred ap state ]
 ```
 
 Given a state `(loc, state)` in our transition system, we have an
@@ -277,11 +282,23 @@ the number of sodas, and the number of beers all add up to a constant
 number: `max_sodas + max_beers`.
 
 ``` haskell
-soda_machine_invariant_1 :: Int -> Int -> Proposition (Either SodaMachineLoc (StatePredicate SodaMachineVar Int))
-soda_machine_invariant_1 max_sodas max_beers =
-  atom (Right (\state ->
-    state ! NumCoins + state ! NumSodas + state ! NumBeers ==
-    max_sodas + max_beers))
+data SodaMachineProposition = Consistent
+```
+
+``` haskell
+smPropToPred :: Int -> Int -> SodaMachineProposition
+             -> StatePredicate SodaMachineVar Int
+smPropToPred max_sodas max_beers Consistent state =
+  state ! NumCoins + state ! NumSodas + state ! NumBeers ==
+  max_sodas + max_beers
+```
+
+``` haskell
+-- soda_machine_invariant_1 :: Int -> Int -> Proposition (Either SodaMachineLoc (StatePredicate SodaMachineVar Int))
+-- soda_machine_invariant_1 max_sodas max_beers =
+--   atom (Right (\state ->
+--     state ! NumCoins + state ! NumSodas + state ! NumBeers ==
+--     max_sodas + max_beers))
 ```
 
 Let’s check this property of our soda machine in ghci! We’ll use a
@@ -298,9 +315,9 @@ fix this by restricting the invariant so it only applies when we are in
 the `Start` state:
 
 ``` haskell
-soda_machine_invariant_2 :: Int -> Int -> Proposition (Either SodaMachineLoc (StatePredicate SodaMachineVar Int))
-soda_machine_invariant_2 max_sodas max_beers =
-  atom (Left Start) .-> soda_machine_invariant_1 max_sodas max_beers
+-- soda_machine_invariant_2 :: Int -> Int -> Proposition (Either SodaMachineLoc (StatePredicate SodaMachineVar Int))
+-- soda_machine_invariant_2 max_sodas max_beers =
+--   atom (Left Start) .-> soda_machine_invariant_1 max_sodas max_beers
 ```
 
 Now, let’s check this new version:

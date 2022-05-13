@@ -35,7 +35,7 @@ The *state* of a program is a mapping from variables to values.
 
 A *state condition* is a predicate over the `State`.
 
-> type StatePredicate var val = Predicate (State var val)
+> type StatePredicate var val = State var val -> Bool
 
 An *effect* is a state transformation, which modifies the state in some way.
 
@@ -174,9 +174,14 @@ We'd like to check properties of imperative programs using the machinery
 developed in the previous post. First, though, we'll need to write a function
 that converts a program graph to a transition system.
 
+> data PGProp loc ap = PGInLoc loc | PGStateProp ap
+>   deriving (Show, Eq, Ord)
+
 > pgToTS :: Eq loc
 >        => ProgramGraph loc action var val
->        -> TransitionSystem (loc, State var val) action (Either loc (StatePredicate var val))
+>        -> [ap]
+>        -> (ap -> StatePredicate var val)
+>        -> TransitionSystem (loc, State var val) action (PGProp loc ap)
 
 For a program graph with locations `loc`, variables `var`, and values `val`, the
 states of the corresponding transition system will be pairs `(loc, State var
@@ -190,7 +195,7 @@ state. This will allow us to state a very broad class of properties to check.
 
 Let's walk through the definition of `pgToTS`.
 
-> pgToTS pg = TransitionSystem
+> pgToTS pg aps toPred = TransitionSystem
 
 The initial states of the transition system will be all pairs `(loc, state0)`
 where `l` is an initial location of the program graph, and `state0` is the
@@ -203,9 +208,8 @@ Each `(loc, state)` pair is is labeled with the proposition that is `True` for
 location `loc` and no other locations, and is also `True` for all state
 conditions that are satisfied by `state`.
 
->   , tsLabel = \(loc, state) c -> case c of
->       Left loc' -> loc == loc'
->       Right cond -> cond state
+>   , tsLabel = \(loc, state) -> PGInLoc loc :
+>                                [ PGStateProp ap | ap <- aps, toPred ap state ]
 
 Given a state `(loc, state)` in our transition system, we have an outgoing
 transition for every transition in the program graph from `loc` whose guard is
@@ -229,11 +233,14 @@ particular, we would like to know that the number of coins, the number of sodas,
 and the number of beers all add up to a constant number: `max_sodas +
 max_beers`.
 
-> soda_machine_invariant_1 :: Int -> Int -> Proposition (Either SodaMachineLoc (StatePredicate SodaMachineVar Int))
-> soda_machine_invariant_1 max_sodas max_beers =
->   atom (Right (\state ->
->     state ! NumCoins + state ! NumSodas + state ! NumBeers ==
->     max_sodas + max_beers))
+> data SodaMachineProposition = Consistent
+>   deriving (Show, Eq, Ord)
+
+> smPropToPred :: Int -> Int -> SodaMachineProposition
+>              -> StatePredicate SodaMachineVar Int
+> smPropToPred max_sodas max_beers Consistent state =
+>   state ! NumCoins + state ! NumSodas + state ! NumBeers ==
+>   max_sodas + max_beers
 
 Let's check this property of our soda machine in ghci! We'll use a maximum
 capacity of `2` for both soda and beer:
@@ -247,9 +254,9 @@ Aha! Our stated property actually doesn't hold. Immediately after the customer
 inserts a coin, the system is in an inconsistent state. We can fix this by
 restricting the invariant so it only applies when we are in the `Start` state:
 
-> soda_machine_invariant_2 :: Int -> Int -> Proposition (Either SodaMachineLoc (StatePredicate SodaMachineVar Int))
-> soda_machine_invariant_2 max_sodas max_beers =
->   atom (Left Start) .-> soda_machine_invariant_1 max_sodas max_beers
+> -- soda_machine_invariant_2 :: Int -> Int -> Proposition (Either SodaMachineLoc (StatePredicate SodaMachineVar Int))
+> -- soda_machine_invariant_2 max_sodas max_beers =
+> --   atom (Left Start) .-> soda_machine_invariant_1 max_sodas max_beers
 
 Now, let's check this new version:
 
