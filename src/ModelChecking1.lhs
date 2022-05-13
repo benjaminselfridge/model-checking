@@ -30,6 +30,7 @@ Preamble:
 > module ModelChecking1 where
 >
 > import Data.List (nubBy, find)
+> import Data.Word
 > import System.Random (RandomGen, randomR)
 
 Overview
@@ -49,23 +50,21 @@ defined as follows:
 
 > data TransitionSystem s action ap = TransitionSystem
 >   { tsInitialStates :: [s]
->   , tsLabel         :: s -> Predicate ap
+>   , tsLabel         :: s -> [ap]
 >   , tsTransitions   :: s -> [(action, s)]
 >   }
 
-A `Predicate` is simply a `Bool`ean-valued function:
-
-> type Predicate a = a -> Bool
-
-Let `ts :: TransitionSystem s action ap` be a transition system, and let `s ::
-s` and `ap :: ap`. The intuition behind each of the three fields of `ts` are:
+The intuition behind each of the three fields of a transition system `ts` is as
+follows:
 
 * `tsInitialStates ts`: "the states that the system can start in"
-* `tsLabel ts s ap`: "whether `ap` is true in state `s`"
-* `tsTransitions ts s`: "all possible next states after `s`"
+* `tsLabel ts s`: "the set of all atomic propositions that are true in state `s`"
+* `tsTransitions ts s`: "all of `s`'s outgoing transitions"
 
 The label of a state is an abstraction of the "internal data" of that state, and
-the transitions are an abstraction of control flow.
+the transitions are an abstraction of control flow. Here, a transition is a pair
+`(action, s')` where `s'` is the destination state of the transition, and
+`action` is a name for the transition.
 
 Example: Traffic light
 ----------------------
@@ -74,35 +73,36 @@ We can create a very simple transition system representing the states and
 transitions of a traffic light. The states `s` will be the colors red, yellow,
 and green:
 
-> data Color = Red | Green | Yellow deriving (Show, Eq, Ord)
+> data Color = Red | Yellow | Green deriving (Show, Eq, Ord)
 
-We will use `()` for the `action` type in this example. The atomic propositions
-`ap` will also be `Color`; this will allow us to ask which color is on in each
-state.
+There will only be one action:
+
+> data ChangeColor = ChangeColor deriving (Show, Eq, Ord)
 
 Finally, our set of transitions will allow `Red` to transition to `Green`,
 `Green` to `Yellow`, and `Yellow` to `Red`:
 
-> traffic_light :: TransitionSystem Color () Color
+> traffic_light :: TransitionSystem Color ChangeColor Color
 > traffic_light = TransitionSystem
 >   { tsInitialStates = [Red]
->   , tsLabel = \s -> (s ==)
+>   , tsLabel = \s -> [s]
 >   , tsTransitions = \s -> case s of
->       Red    -> [((), Green )]
->       Green  -> [((), Yellow)]
->       Yellow -> [((), Red   )]
+>       Red    -> [(ChangeColor, Green )]
+>       Green  -> [(ChangeColor, Yellow)]
+>       Yellow -> [(ChangeColor, Red   )]
 >   }
 
-The label of each state `s` is `(s ==)`: the only color that is on in state `s`
-is `s` itself. We can check this in `ghci`:
+Notice that we reuse our state type `Color` as our set of atomic propositions.
+The label of each state `s` is `[s]`: the only color that is on in state `s` is
+`s` itself. We can check this in `ghci`:
 
 ``` {.haskell}
-  > tsLabel traffic_light Red Red     -- is Red on in state Red?
-  True
-  > tsLabel traffic_light Red Green   -- is Green on in state Red?
-  False
-  > tsLabel traffic_light Green Green -- is Green on in state Green?
-  True
+  > tsLabel traffic_light Red
+  [Red]
+  > tsLabel traffic_light Yellow
+  [Yellow]
+  > tsLabel traffic_light Green
+  [Green]
 ```
 
 "Running" a transition system
@@ -111,103 +111,104 @@ is `s` itself. We can check this in `ghci`:
 A *run* of a transition system is a finite or infinite path in the underlying
 graph:
 
-> data Run s action = Run s [(action, s)]
+> data Path s action = Path s [(action, s)]
 >   deriving (Show)
 
 In the transitions systems we'll define, it will be useful to be able to examine
 random infinite runs of the system to get a feel for what the possibilites are:
 
-> randomRun :: RandomGen g => g -> TransitionSystem s action ap -> Run s action
+> randomRun :: RandomGen g => g -> TransitionSystem s action ap -> Path s action
 > randomRun g ts = let (i, g') = randomR (0, length (tsInitialStates ts)) g
 >                      s = tsInitialStates ts !! i
->                  in Run s (randomRun' g' s ts)
+>                  in Path s (randomRun' g' s ts)
 >   where randomRun' g s ts = let nexts = tsTransitions ts s
 >                                 (i, g') = randomR (0, length nexts - 1) g
 >                                 (action, s') = nexts !! i
 >                             in (action, s') : randomRun' g s' ts
 
-We also define a version of `take` that works on infinite `Run`s, so that we can
+We also define a version of `take` that works on infinite `Path`s, so that we can
 easily look at finite prefixes:
 
-> takeRun :: Int -> Run s action -> Run s action
-> takeRun n (Run s transitions) = Run s (take n transitions)
+> takePath :: Int -> Path s action -> Path s action
+> takePath n (Path s transitions) = Path s (take n transitions)
 
 We can put this function to the test on our `traffic_light` example in `ghci`:
 
 ```{.haskell}
   > import System.Random
   > g = mkStdGen 0
-  > takeRun 6 (randomRun g traffic_light)
-  Run Red [((),Green),((),Yellow),((),Red),((),Green),((),Yellow),((),Red)]
+  > takePath 6 (randomRun g traffic_light)
+  Path Red [(ChangeColor,Green),(ChangeColor,Yellow),(ChangeColor,Red),(ChangeColor,Green),(ChangeColor,Yellow),(ChangeColor,Red)]
 ```
 
 Because each state in `traffic_light` has exactly one outgoing transition, this
 is the only run we will ever get. In subsequent posts, we'll look at
-nondeterministic transition systems, and it will be helpful to look at random
-runs to get a sense for the different possibilities.
+nondeterministic transition systems which will return different runs with
+different random generators.
 
-It will be useful to be able to construct `Run`s in reverse:
+The following functions will be useful to have:
 
-> reverseRun :: s -> [(action, s)] -> Run s action
-> reverseRun s prefix = go [] s prefix
->   where go suffix s [] = Run s prefix
+> singletonPath :: s -> Path s action
+> singletonPath s = Path s []
+
+> consPath :: (s, action) -> Path s action -> Path s action
+> consPath (s, action) (Path s' tl) = Path s ((action, s'):tl)
+
+> reversePath :: Path s action -> Path s action
+> reversePath (Path s prefix) = go [] s prefix
+>   where go suffix s [] = Path s suffix
 >         go suffix s ((action, s'):prefix) = go ((action, s):suffix) s' prefix
 
-Predicates and propositions
----------------------------
+Propositions
+------------
 
-Recall that a *predicate* is any boolean-valued function. We can define the
-*satisfaction* operator `|=` as
+We are interested in checking properties about the states of a transition
+system. For this, we will need the notion of a *proposition*:
 
-> (|=) :: a -> Predicate a -> Bool
+> type Proposition ap = [ap] -> Bool
+
+The `ap` type represents our atomic propositional variables, and a list `[ap]`
+is thought of as "the set of variables that are true". In this sense, a
+`Proposition` can represent any logical formula over the variables `ap`.
+
+> (|=) :: [a] -> Proposition a -> Bool
 > a |= p = p a
 > infix 0 |=
 
 `a |= p` is read as "a satisfies p". A very simple predicate is `true`, which
 holds for all inputs:
 
-> true :: Predicate a
+> true :: Proposition a
 > true _ = True
 
 Similarly, `false` holds for no inputs:
 
-> false :: Predicate a
+> false :: Proposition a
 > false _ = False
-
-We can define the usual boolean operators on predicates in terms of
-satisfaction:
-
-> (.&) :: Predicate a -> Predicate a -> Predicate a
-> (p .& q) a = (a |= p) && (a |= q)
-> infixr 3 .&
->
-> (.|) :: Predicate a -> Predicate a -> Predicate a
-> (p .| q) a = (a |= p) || (a |= q)
-> infixr 2 .|
->
-> pnot :: Predicate a -> Predicate a
-> pnot p a = not (a |= p)
->
-> (.->) :: Predicate a -> Predicate a -> Predicate a
-> (p .-> q) a = if a |= p then a |= q else True
-> infixr 1 .->
-
-In order to state properties about the states in our transition systems, we will
-need the notion of a *proposition*. A `Proposition` is a predicate about
-predicates:
-
-> type Proposition a = Predicate (Predicate a)
 
 Given an atomic propositional variable `ap`, we can form the proposition "`ap`
 holds" as follows:
 
-> atom :: a -> Proposition a
-> atom ap f = ap |= f
+> atom :: Eq a => a -> Proposition a
+> atom a as = a `elem` as
 
-For a predicate `f : ap -> Bool`, `atom ap f` will be `True` if and only if `f`
-assigns variable `ap` to `True`. When a transition system is in state `s`, we
-can ask whether `tsLabel s |= p`, which is the same as asking "is `p` true in
-state `s`?"
+We can define the usual boolean operators on predicates in terms of
+satisfaction:
+
+> (.&) :: Proposition a -> Proposition a -> Proposition a
+> (p .& q) a = p a && q a
+> infixr 3 .&
+>
+> (.|) :: Proposition a -> Proposition a -> Proposition a
+> (p .| q) a = p a || q a
+> infixr 2 .|
+>
+> pnot :: Proposition a -> Proposition a
+> pnot p a = not (p a)
+>
+> (.->) :: Proposition a -> Proposition a -> Proposition a
+> (p .-> q) a = if p a then q a else True
+> infixr 1 .->
 
 Checking invariants
 -------------------
@@ -218,33 +219,43 @@ reachable states of a transition system is called an *invariant*.
 
 To check whether an invariant holds, we evaluate the proposition on each
 reachable state (more precisely, on the *label* of each state). To do this, we
-first define an auxiliary function that collects all reachable states in the
-underlying graph, along with a run that leads to each state, given the start
-states and a function mapping each state to its list of possible next states.
+define a lazy breadth-first search of the transition system, which discovers all
+reachable states and provides a path to each one it finds. We'll first need a
+simple queue data structure:
 
-> reachables :: Eq s => [s] -> (s -> [(action, s)]) -> [(s, Run s action)]
-> reachables starts transitions = f <$> go [] (zip starts (repeat []))
->   where go visited [] = nubBy (\x y -> fst x == fst y) visited
->         go visited starts =
->           let nexts = [ (s', (action, s):path)
->                       | (s, path) <- starts
->                       , (action, s') <- transitions s
->                       , s' `notElem` map fst visited ]
->           in go (visited ++ starts) nexts
->
->         f (s, trace) = (s, reverseRun s trace)
+> type Q a = ([a], [a])
 
-Now, to check an invariant, we simply collect all the reachable states and make
-sure the invariant holds for each of their labels, producing a path to a bad
-state if there is one:
+> deq :: Q a -> Maybe (a, Q a)
+> deq ([], []) = Nothing
+> deq (prefix, a:suffix) = Just (a, (prefix, suffix))
+> deq (prefix, []) = deq ([], reverse prefix)
+
+> enqs :: [a] -> Q a -> Q a
+> enqs as (prefix, suffix) = (as ++ prefix, suffix)
+
+Now, we can implement a classic breadth-first search:
+
+> bfs :: Eq s => [s] -> (s -> [(action, s)]) -> [(s, Path s action)]
+> bfs starts transitions =
+>   [ (s, reversePath p) | p@(Path s tl) <- loop [] (singletonPath <$> starts, []) ]
+>   where loop visited q
+>           | Nothing <- deq q = []
+>           | Just (Path s _, q') <- deq q, s `elem` visited = loop visited q'
+>           | Just (p@(Path s _), q') <- deq q =
+>               let nexts = [ consPath (s', action) p | (action, s') <- transitions s ]
+>               in p : loop (s:visited) (enqs nexts q)
+
+Now, to check an invariant, we simply collect all the reachable states via `bfs`
+and make sure the invariant holds for each of their labels, producing a path to
+a bad state if there is one:
 
 > checkInvariant :: Eq s
 >                => Proposition ap
 >                -> TransitionSystem s action ap
->                -> Maybe (Run s action)
+>                -> Maybe (s, Path s action)
 > checkInvariant p ts =
->   let rs = reachables (tsInitialStates ts) (tsTransitions ts)
->   in snd <$> find (\(s,_) -> tsLabel ts s |= pnot p) rs
+>   let rs = bfs (tsInitialStates ts) (tsTransitions ts)
+>   in find (\(s,_) -> tsLabel ts s |= pnot p) rs
 
 Checking a traffic light invariant
 ----------------------------------
@@ -256,7 +267,7 @@ a good one for any traffic light to have.
 We can use our `checkInvariant` function to check that this invariant holds:
 
 ``` {.haskell}
-  > checkInvariant (not (atom Red .& atom Green)) traffic_light
+  > checkInvariant (pnot (atom Red .& atom Green)) traffic_light
   Nothing
 ```
 
@@ -264,8 +275,8 @@ The result `Nothing` means there were no counterexamples, which means our
 invariant holds! Let's try it with an invariant that doesn't hold:
 
 ``` {.haskell}
-  > checkInvariant (not (atom Yellow)) traffic_light
-  Just [Red, Green, Yellow]
+  > checkInvariant (pnot (atom Yellow)) traffic_light
+  Just (Path Red [(ChangeColor,Green),(ChangeColor,Yellow)])
 ```
 
 Our invariant checking algorithm was able to find a path to a state that
@@ -275,8 +286,8 @@ transition system, our property doesn't hold. What if, however, `Yellow` is not
 reachable?
 
 ``` {.haskell}
-  > traffic_light = TransitionSystem [Red] (\s -> case s of Red -> [Green]; Green -> [Red]) (==)
-  > checkInvariant (not (atom Yellow)) traffic_light
+  > traffic_light = TransitionSystem [Red] (:[]) (\s -> case s of Red -> [(ChangeColor, Green)]; Green -> [(ChangeColor, Red)]; Yellow -> [(ChangeColor, Red)])
+  > checkInvariant (pnot (atom Yellow)) traffic_light
   Nothing
 ```
 

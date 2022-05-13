@@ -23,9 +23,9 @@ extra-source-files: CHANGELOG.md
 
 library
     exposed-modules:  ModelChecking1
-                      ModelChecking2
-                      ModelChecking3
-                      GraphViz
+                      -- ModelChecking2
+                      -- ModelChecking3
+                      -- GraphViz
 
     -- Modules included in this library but not exported.
     -- other-modules:
