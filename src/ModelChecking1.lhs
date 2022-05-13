@@ -34,7 +34,7 @@ Preamble:
 > import System.Random (RandomGen, randomR)
 
 Overview
---------
+==
 
 In this post, we will introduce the notion of a transition system, and we will
 state simple properties about them, called *invariants*. We will also implement
@@ -42,7 +42,7 @@ a simple model checking algorithm, whose aim is to check that an invariant holds
 for all reachable states of the system.
 
 Transition systems
-------------------
+==
 
 Let `s`, `action`, and `ap` be arbitrary Haskell types. Then a *transition
 system* over state set `s`, action set `action`, and atomic propositions `ap` is
@@ -67,7 +67,7 @@ the transitions are an abstraction of control flow. Here, a transition is a pair
 `action` is a name for the transition.
 
 Example: Traffic light
-----------------------
+==
 
 We can create a very simple transition system representing the states and
 transitions of a traffic light. The states `s` will be the colors red, yellow,
@@ -106,7 +106,7 @@ The label of each state `s` is `[s]`: the only color that is on in state `s` is
 ```
 
 "Running" a transition system
------------------------------
+==
 
 A *run* of a transition system is a finite or infinite path in the underlying
 graph:
@@ -160,7 +160,7 @@ The following functions will be useful to have:
 >         go suffix s ((action, s'):prefix) = go ((action, s):suffix) s' prefix
 
 Propositions
-------------
+==
 
 We are interested in checking properties about the states of a transition
 system. For this, we will need the notion of a *proposition*:
@@ -171,47 +171,47 @@ The `ap` type represents our atomic propositional variables, and a list `[ap]`
 is thought of as "the set of variables that are true". In this sense, a
 `Proposition` can represent any logical formula over the variables `ap`.
 
-> (|=) :: [a] -> Proposition a -> Bool
-> a |= p = p a
+> (|=) :: [ap] -> Proposition ap -> Bool
+> aps |= p = p aps
 > infix 0 |=
 
 `a |= p` is read as "a satisfies p". A very simple predicate is `true`, which
 holds for all inputs:
 
-> true :: Proposition a
+> true :: Proposition ap
 > true _ = True
 
 Similarly, `false` holds for no inputs:
 
-> false :: Proposition a
+> false :: Proposition ap
 > false _ = False
 
 Given an atomic propositional variable `ap`, we can form the proposition "`ap`
 holds" as follows:
 
-> atom :: Eq a => a -> Proposition a
-> atom a as = a `elem` as
+> atom :: Eq ap => ap -> Proposition ap
+> atom ap aps = ap `elem` aps
 
 We can define the usual boolean operators on predicates in terms of
 satisfaction:
 
-> (.&) :: Proposition a -> Proposition a -> Proposition a
-> (p .& q) a = p a && q a
+> (.&) :: Proposition ap -> Proposition ap -> Proposition ap
+> (p .& q) aps = p aps && q aps
 > infixr 3 .&
 >
-> (.|) :: Proposition a -> Proposition a -> Proposition a
-> (p .| q) a = p a || q a
+> (.|) :: Proposition ap -> Proposition ap -> Proposition ap
+> (p .| q) aps = p aps || q aps
 > infixr 2 .|
 >
-> pnot :: Proposition a -> Proposition a
-> pnot p a = not (p a)
+> pnot :: Proposition ap -> Proposition ap
+> pnot p aps = not (p aps)
 >
-> (.->) :: Proposition a -> Proposition a -> Proposition a
-> (p .-> q) a = if p a then q a else True
+> (.->) :: Proposition ap -> Proposition ap -> Proposition ap
+> (p .-> q) aps = if p aps then q aps else True
 > infixr 1 .->
 
 Checking invariants
--------------------
+==
 
 Given a transition system `ts` and a proposition `p`, we can ask: "Does `p` hold
 at all reachable states in `ts`?" A proposition which is supposed to hold at all
@@ -219,31 +219,42 @@ reachable states of a transition system is called an *invariant*.
 
 To check whether an invariant holds, we evaluate the proposition on each
 reachable state (more precisely, on the *label* of each state). To do this, we
-define a lazy breadth-first search of the transition system, which discovers all
-reachable states and provides a path to each one it finds. We'll first need a
-simple queue data structure:
+first need to define a breadth-first search of the transition system.
+
+Breadth-first search
+--
+
+We'll need a quick-and-dirty implementation of a functional queue data
+structure:
 
 > type Q a = ([a], [a])
+
+> emptyq :: Q a
+> emptyq = ([], [])
+
+> enqs :: [a] -> Q a -> Q a
+> enqs as (prefix, suffix) = (as ++ prefix, suffix)
 
 > deq :: Q a -> Maybe (a, Q a)
 > deq ([], []) = Nothing
 > deq (prefix, a:suffix) = Just (a, (prefix, suffix))
 > deq (prefix, []) = deq ([], reverse prefix)
 
-> enqs :: [a] -> Q a -> Q a
-> enqs as (prefix, suffix) = (as ++ prefix, suffix)
-
-Now, we can implement a classic breadth-first search:
+Now, we can implement a classic breadth-first search as follows:
 
 > bfs :: Eq s => [s] -> (s -> [(action, s)]) -> [(s, Path s action)]
 > bfs starts transitions =
->   [ (s, reversePath p) | p@(Path s tl) <- loop [] (singletonPath <$> starts, []) ]
+>   [ (s, reversePath p)
+>   | p@(Path s tl) <- loop [] (enqs (singletonPath <$> starts) emptyq) ]
 >   where loop visited q
 >           | Nothing <- deq q = []
 >           | Just (Path s _, q') <- deq q, s `elem` visited = loop visited q'
 >           | Just (p@(Path s _), q') <- deq q =
 >               let nexts = [ consPath (s', action) p | (action, s') <- transitions s ]
 >               in p : loop (s:visited) (enqs nexts q)
+
+The `checkInvariant` function
+--
 
 Now, to check an invariant, we simply collect all the reachable states via `bfs`
 and make sure the invariant holds for each of their labels, producing a path to
@@ -258,7 +269,7 @@ a bad state if there is one:
 >   in find (\(s,_) -> tsLabel ts s |= pnot p) rs
 
 Checking a traffic light invariant
-----------------------------------
+==
 
 Let's check an invariant of our traffic light system -- that the light is never
 red and green at the same time. It's not a very interesting invariant, but it's
@@ -292,7 +303,7 @@ reachable?
 ```
 
 Conclusion
-----------
+==
 
 Hopefully, this first post gave you a taste of what model checking is all about.
 In the next post, we'll talk about how to convert higher-level program to
