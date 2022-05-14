@@ -200,22 +200,27 @@ Let's play with propositions a bit in ghci to get a feel:
   > data AB = A | B deriving (Show, Eq)
   > [A] |= atom A
   True
-  > [B] |= atom A
+  > [A] |= atom B
   False
-  > [A, B] |= atom A
+  > [A] |= not (atom B)
   True
   > [A] |= atom A .& atom B
   False
   > [A] |= atom A .| atom B
+  True
+  > [A] |= atom A .-> atom B
+  False
+  > [A] |= atom B .-> atom A
   True
 ```
 
 Checking invariants
 ==
 
-Given a transition system `ts` and a proposition `p`, we can ask: "Does `p` hold
-at all reachable states in `ts`?" A proposition which is supposed to hold at all
-reachable states of a transition system is called an *invariant*.
+Given a transition system `ts` and a proposition `p` over `ts`'s atomic
+propositional variables, we can ask: "Does `p` hold at all reachable states in
+`ts`?" A proposition which is supposed to hold at all reachable states of a
+transition system is called an *invariant*.
 
 To check whether an invariant holds, we evaluate the proposition on each
 reachable state (more precisely, on the *label* of each reachable state). To do

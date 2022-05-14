@@ -216,16 +216,20 @@
 <div class="sourceCode" id="cb19"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a>  <span class="op">&gt;</span> <span class="kw">data</span> <span class="dt">AB</span> <span class="ot">=</span> <span class="dt">A</span> <span class="op">|</span> <span class="dt">B</span> <span class="kw">deriving</span> (<span class="dt">Show</span>, <span class="dt">Eq</span>)</span>
 <span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a>  <span class="op">&gt;</span> [<span class="dt">A</span>] <span class="op">|=</span> atom <span class="dt">A</span></span>
 <span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">True</span></span>
-<span id="cb19-4"><a href="#cb19-4" aria-hidden="true" tabindex="-1"></a>  <span class="op">&gt;</span> [<span class="dt">B</span>] <span class="op">|=</span> atom <span class="dt">A</span></span>
+<span id="cb19-4"><a href="#cb19-4" aria-hidden="true" tabindex="-1"></a>  <span class="op">&gt;</span> [<span class="dt">A</span>] <span class="op">|=</span> atom <span class="dt">B</span></span>
 <span id="cb19-5"><a href="#cb19-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">False</span></span>
-<span id="cb19-6"><a href="#cb19-6" aria-hidden="true" tabindex="-1"></a>  <span class="op">&gt;</span> [<span class="dt">A</span>, <span class="dt">B</span>] <span class="op">|=</span> atom <span class="dt">A</span></span>
+<span id="cb19-6"><a href="#cb19-6" aria-hidden="true" tabindex="-1"></a>  <span class="op">&gt;</span> [<span class="dt">A</span>] <span class="op">|=</span> <span class="fu">not</span> (atom <span class="dt">B</span>)</span>
 <span id="cb19-7"><a href="#cb19-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">True</span></span>
 <span id="cb19-8"><a href="#cb19-8" aria-hidden="true" tabindex="-1"></a>  <span class="op">&gt;</span> [<span class="dt">A</span>] <span class="op">|=</span> atom <span class="dt">A</span> <span class="op">.&amp;</span> atom <span class="dt">B</span></span>
 <span id="cb19-9"><a href="#cb19-9" aria-hidden="true" tabindex="-1"></a>  <span class="dt">False</span></span>
 <span id="cb19-10"><a href="#cb19-10" aria-hidden="true" tabindex="-1"></a>  <span class="op">&gt;</span> [<span class="dt">A</span>] <span class="op">|=</span> atom <span class="dt">A</span> <span class="op">.|</span> atom <span class="dt">B</span></span>
-<span id="cb19-11"><a href="#cb19-11" aria-hidden="true" tabindex="-1"></a>  <span class="dt">True</span></span></code></pre></div>
+<span id="cb19-11"><a href="#cb19-11" aria-hidden="true" tabindex="-1"></a>  <span class="dt">True</span></span>
+<span id="cb19-12"><a href="#cb19-12" aria-hidden="true" tabindex="-1"></a>  <span class="op">&gt;</span> [<span class="dt">A</span>] <span class="op">|=</span> atom <span class="dt">A</span> <span class="op">.-&gt;</span> atom <span class="dt">B</span></span>
+<span id="cb19-13"><a href="#cb19-13" aria-hidden="true" tabindex="-1"></a>  <span class="dt">False</span></span>
+<span id="cb19-14"><a href="#cb19-14" aria-hidden="true" tabindex="-1"></a>  <span class="op">&gt;</span> [<span class="dt">A</span>] <span class="op">|=</span> atom <span class="dt">B</span> <span class="op">.-&gt;</span> atom <span class="dt">A</span></span>
+<span id="cb19-15"><a href="#cb19-15" aria-hidden="true" tabindex="-1"></a>  <span class="dt">True</span></span></code></pre></div>
 <h1 id="checking-invariants">Checking invariants</h1>
-<p>Given a transition system <code>ts</code> and a proposition <code>p</code>, we can ask: “Does <code>p</code> hold at all reachable states in <code>ts</code>?” A proposition which is supposed to hold at all reachable states of a transition system is called an <em>invariant</em>.</p>
+<p>Given a transition system <code>ts</code> and a proposition <code>p</code> over <code>ts</code>’s atomic propositional variables, we can ask: “Does <code>p</code> hold at all reachable states in <code>ts</code>?” A proposition which is supposed to hold at all reachable states of a transition system is called an <em>invariant</em>.</p>
 <p>To check whether an invariant holds, we evaluate the proposition on each reachable state (more precisely, on the <em>label</em> of each reachable state). To do this, we first define a lazy depth-first search.</p>
 <h2 id="depth-first-search">Depth-first search</h2>
 <p>Our search algorithm produces each reachable state, along with the path traversed to reach that state.</p>
