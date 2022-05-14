@@ -295,4 +295,4 @@ Conclusion
 
 Hopefully, this first post gave you a taste of what model checking is all about.
 In the next post, we'll talk about how to convert higher-level programs into
-transition systems, we'll explore some more interesting examples.
+transition systems, and we'll explore some more interesting examples.
