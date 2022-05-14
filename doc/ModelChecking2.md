@@ -212,6 +212,7 @@ function that converts a program graph to a transition system.
 
 ``` haskell
 data PGProp loc ap = PGInLoc loc | PGStateProp ap
+  deriving (Show, Eq, Ord)
 ```
 
 ``` haskell
@@ -283,6 +284,7 @@ number: `max_sodas + max_beers`.
 
 ``` haskell
 data SodaMachineProposition = Consistent
+  deriving (Show, Eq, Ord)
 ```
 
 ``` haskell
@@ -291,14 +293,6 @@ smPropToPred :: Int -> Int -> SodaMachineProposition
 smPropToPred max_sodas max_beers Consistent state =
   state ! NumCoins + state ! NumSodas + state ! NumBeers ==
   max_sodas + max_beers
-```
-
-``` haskell
--- soda_machine_invariant_1 :: Int -> Int -> Proposition (Either SodaMachineLoc (StatePredicate SodaMachineVar Int))
--- soda_machine_invariant_1 max_sodas max_beers =
---   atom (Right (\state ->
---     state ! NumCoins + state ! NumSodas + state ! NumBeers ==
---     max_sodas + max_beers))
 ```
 
 Let’s check this property of our soda machine in ghci! We’ll use a

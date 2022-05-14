@@ -4,7 +4,7 @@ module GraphViz where
 
 import ModelChecking1
 import ModelChecking2
-import ModelChecking3
+-- import ModelChecking3
 
 import Control.Monad (void)
 import qualified Data.GraphViz as GV
@@ -17,29 +17,36 @@ import Data.String
 class ActionLabel l where
   actionLabel :: l -> String
 
-instance ActionLabel () where
-  actionLabel () = ""
+instance ActionLabel Change where
+  actionLabel Change = "change"
+
+instance ActionLabel SodaMachineAction where
+  actionLabel InsertCoin = "insert coin"
+  actionLabel GetSoda = "get soda"
+  actionLabel GetBeer = "get beer"
+  actionLabel ReturnCoin = "return coin"
+  actionLabel ServiceMachine = "service machine"
 
 instance (ActionLabel a, ActionLabel b) => ActionLabel (Either a b) where
   actionLabel (Left a) = actionLabel a
   actionLabel (Right b) = actionLabel b
 
-instance ActionLabel ProcessAction where
-  actionLabel StartWaiting = "start waiting"
-  actionLabel EnterCrit = "enter crit"
-  actionLabel ExitCrit = "exit crit"
+-- instance ActionLabel ProcessAction where
+--   actionLabel StartWaiting = "start waiting"
+--   actionLabel EnterCrit = "enter crit"
+--   actionLabel ExitCrit = "exit crit"
 
-instance ActionLabel BookingEvent where
-  actionLabel Scan = "scan"
-  actionLabel Store = "store"
-  actionLabel PrintCmd = "print_cmd"
-  actionLabel Print = "print"
+-- instance ActionLabel BookingEvent where
+--   actionLabel Scan = "scan"
+--   actionLabel Store = "store"
+--   actionLabel PrintCmd = "print_cmd"
+--   actionLabel Print = "print"
 
 tsDotGraph :: (Ord s, GV.Labellable s, ActionLabel action)
            => TransitionSystem s action ap
            -> GV.DotGraph Node
 tsDotGraph ts = GV.graphElemsToDot params nodes edges
-  where nodes = [ (i, s) | ((s, _), i) <- zip (reachables (tsInitialStates ts) (tsTransitions ts)) [0..] ]
+  where nodes = [ (i, s) | ((s, _), i) <- zip (dfs (tsInitialStates ts) (tsTransitions ts)) [0..] ]
         edges = [ (i, i', actionLabel action) | (i, s) <- nodes
                                               , (action, s') <- tsTransitions ts s
                                               , let i' = fromJust (lookup s' nodesToIds) ]
@@ -70,20 +77,20 @@ instance GV.Labellable (SodaMachineLoc, State SodaMachineVar Int) where
              ++   ",nsodas=" ++ show (state ! NumSodas)
              ++   ",nbeers=" ++ show (state ! NumBeers) ++ ">"
 
-instance GV.Labellable (ProcessLoc, State Lock Bool) where
-  toLabelValue (loc, state) = GV.toLabelValue $
-    show loc ++ ": <lock=" ++ show (state ! Lock) ++ ">"
+-- instance GV.Labellable (ProcessLoc, State Lock Bool) where
+--   toLabelValue (loc, state) = GV.toLabelValue $
+--     show loc ++ ": <lock=" ++ show (state ! Lock) ++ ">"
 
-instance GV.Labellable ((ProcessLoc, ProcessLoc), State Lock Bool) where
-  toLabelValue ((loc1, loc2), state) = GV.toLabelValue $
-    "(" ++ show loc1 ++ "," ++ show loc2 ++ "): <lock=" ++ show (state ! Lock) ++ ">"
+-- instance GV.Labellable ((ProcessLoc, ProcessLoc), State Lock Bool) where
+--   toLabelValue ((loc1, loc2), state) = GV.toLabelValue $
+--     "(" ++ show loc1 ++ "," ++ show loc2 ++ "): <lock=" ++ show (state ! Lock) ++ ">"
 
-instance GV.Labellable ((ProcessLoc, ProcessLoc), State PetersonVar Bool) where
-  toLabelValue ((loc1, loc2), state) = GV.toLabelValue $
-    "(" ++ show loc1 ++ "," ++ show loc2 ++ "): " ++
-    "<b1=" ++ show (state ! B1) ++ ", " ++
-    "b2=" ++ show (state ! B2) ++ ", " ++
-    "x=" ++ show (state ! X) ++ ">"
+-- instance GV.Labellable ((ProcessLoc, ProcessLoc), State PetersonVar Bool) where
+--   toLabelValue ((loc1, loc2), state) = GV.toLabelValue $
+--     "(" ++ show loc1 ++ "," ++ show loc2 ++ "): " ++
+--     "<b1=" ++ show (state ! B1) ++ ", " ++
+--     "b2=" ++ show (state ! B2) ++ ", " ++
+--     "x=" ++ show (state ! X) ++ ">"
 
 instance GV.Labellable (Int, Int) where
   toLabelValue (x, y) = GV.toLabelValue $ show (x, y)

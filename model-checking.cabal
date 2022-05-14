@@ -25,7 +25,7 @@ library
     exposed-modules:  ModelChecking1
                       ModelChecking2
                       -- ModelChecking3
-                      -- GraphViz
+                      GraphViz
 
     -- Modules included in this library but not exported.
     -- other-modules:

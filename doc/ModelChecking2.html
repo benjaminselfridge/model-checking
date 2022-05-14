@@ -4,138 +4,8 @@
   <meta charset="utf-8" />
   <meta name="generator" content="pandoc" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
-  <title>Model Checking in Haskell, Part 2</title>
+  <title>Model Checking in Haskell, Part 2: From Programs to Transition Systems</title>
   <style>
-    html {
-      line-height: 1.5;
-      font-family: Georgia, serif;
-      font-size: 20px;
-      color: #1a1a1a;
-      background-color: #fdfdfd;
-    }
-    body {
-      margin: 0 auto;
-      max-width: 36em;
-      padding-left: 50px;
-      padding-right: 50px;
-      padding-top: 50px;
-      padding-bottom: 50px;
-      hyphens: auto;
-      word-wrap: break-word;
-      text-rendering: optimizeLegibility;
-      font-kerning: normal;
-    }
-    @media (max-width: 600px) {
-      body {
-        font-size: 0.9em;
-        padding: 1em;
-      }
-    }
-    @media print {
-      body {
-        background-color: transparent;
-        color: black;
-        font-size: 12pt;
-      }
-      p, h2, h3 {
-        orphans: 3;
-        widows: 3;
-      }
-      h2, h3, h4 {
-        page-break-after: avoid;
-      }
-    }
-    p {
-      margin: 1em 0;
-    }
-    a {
-      color: #1a1a1a;
-    }
-    a:visited {
-      color: #1a1a1a;
-    }
-    img {
-      max-width: 100%;
-    }
-    h1, h2, h3, h4, h5, h6 {
-      margin-top: 1.4em;
-    }
-    h5, h6 {
-      font-size: 1em;
-      font-style: italic;
-    }
-    h6 {
-      font-weight: normal;
-    }
-    ol, ul {
-      padding-left: 1.7em;
-      margin-top: 1em;
-    }
-    li > ol, li > ul {
-      margin-top: 0;
-    }
-    blockquote {
-      margin: 1em 0 1em 1.7em;
-      padding-left: 1em;
-      border-left: 2px solid #e6e6e6;
-      color: #606060;
-    }
-    code {
-      font-family: Menlo, Monaco, 'Lucida Console', Consolas, monospace;
-      font-size: 85%;
-      margin: 0;
-    }
-    pre {
-      margin: 1em 0;
-      overflow: auto;
-    }
-    pre code {
-      padding: 0;
-      overflow: visible;
-    }
-    .sourceCode {
-     background-color: transparent;
-     overflow: visible;
-    }
-    hr {
-      background-color: #1a1a1a;
-      border: none;
-      height: 1px;
-      margin: 1em 0;
-    }
-    table {
-      margin: 1em 0;
-      border-collapse: collapse;
-      width: 100%;
-      overflow-x: auto;
-      display: block;
-      font-variant-numeric: lining-nums tabular-nums;
-    }
-    table caption {
-      margin-bottom: 0.75em;
-    }
-    tbody {
-      margin-top: 0.5em;
-      border-top: 1px solid #1a1a1a;
-      border-bottom: 1px solid #1a1a1a;
-    }
-    th {
-      border-top: 1px solid #1a1a1a;
-      padding: 0.25em 0.5em 0.25em 0.5em;
-    }
-    td {
-      padding: 0.125em 0.5em 0.25em 0.5em;
-    }
-    header {
-      margin-bottom: 4em;
-      text-align: center;
-    }
-    #TOC li {
-      list-style: none;
-    }
-    #TOC a:not(:hover) {
-      text-decoration: none;
-    }
     code{white-space: pre-wrap;}
     span.smallcaps{font-variant: small-caps;}
     span.underline{text-decoration: underline;}
@@ -207,23 +77,36 @@
     code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
     .display.math{display: block; text-align: center; margin: 0.5rem auto;}
   </style>
+  <link rel="stylesheet" href="../css/pandoc.css" />
   <!--[if lt IE 9]>
     <script src="//cdnjs.cloudflare.com/ajax/libs/html5shiv/3.7.3/html5shiv-printshiv.min.js"></script>
   <![endif]-->
 </head>
 <body>
 <header id="title-block-header">
-<h1 class="title">Model Checking in Haskell, Part 2</h1>
+<h1 class="title">Model Checking in Haskell, Part 2: From Programs to Transition Systems</h1>
 </header>
-<h1 id="model-checking-in-haskell-part-2-from-programs-to-transition-systems">Model Checking in Haskell, Part 2: From Programs to Transition Systems</h1>
-<p>In this post, we’ll talk about how to convert an imperative computer program into a transition system. We’ll then look at an example program, and show how to use this conversion routine to check interesting invariants about the program’s behavior.</p>
-<p>Preamble:</p>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#program-graphs">Program Graphs</a>
+<ul>
+<li><a href="#predicates-and-effects">Predicates and effects</a></li>
+<li><a href="#example-soda-machine">Example: Soda Machine</a></li>
+</ul></li>
+<li><a href="#converting-a-program-graph-to-a-transition-system">Converting a Program Graph to a Transition System</a>
+<ul>
+<li><a href="#checking-soda-machine-invariants">Checking soda machine invariants</a></li>
+</ul></li>
+<li><a href="#conclusion">Conclusion</a></li>
+</ul>
+</nav>
+<p>In this post, we’ll talk about how to convert an imperative computer program into a transition system. We’ll look at an example program, and show how to use this conversion routine to check interesting invariants about the program’s behavior.</p>
+<h1 id="program-graphs">Program Graphs</h1>
 <div class="sourceCode" id="cb1"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">module</span> <span class="dt">ModelChecking2</span> <span class="kw">where</span></span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> <span class="dt">ModelChecking1</span></span>
 <span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> <span class="dt">Data.Map.Strict</span> (<span class="dt">Map</span>, (!), fromList, adjust, insert)</span></code></pre></div>
-<h2 id="program-graphs">Program Graphs</h2>
-<p>Our first task will be to define a very simple imperative programming language. Our program representation will consist of a set of <em>locations</em>, which can be thought of (roughly) as a line of code in a language like C. With each such location, we associate a collection of <em>guarded transitions</em>. A guarded transition is a triple <code>(guard, action, loc)</code>. If <code>guard</code> is true of the current global state, then modify the state by performing <code>action</code> and go to location <code>loc</code>." When a guard is satisified in a given state, the corresponding transition is said to be <em>enabled</em>. When multiple transitions are enabled, one of them is chosen nondeterministically.</p>
+<p>Our first task will be to define a very simple imperative programming language. Our program representation will consist of a set of <em>locations</em>, which can be thought of (roughly) as a line of code in a language like C. With each such location, we associate a collection of <em>guarded transitions</em>. A guarded transition is a triple <code>(guard, action, loc)</code>, with the meaning: “If <code>guard</code> is true of the current global state, then modify the state by performing <code>action</code> and go to location <code>loc</code>.” When a guard is satisified in a given state, the corresponding transition is said to be <em>enabled</em>. When multiple transitions are enabled, one of them is chosen nondeterministically.</p>
 <p>We will call this construction a <em>program graph</em>. To define it in Haskell, we first define a couple auxiliary notions.</p>
 <p>The <em>state</em> of a program is a mapping from variables to values.</p>
 <div class="sourceCode" id="cb2"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">type</span> <span class="dt">State</span> var val <span class="ot">=</span> <span class="dt">Map</span> var val</span></code></pre></div>
@@ -231,134 +114,127 @@
 <div class="sourceCode" id="cb3"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">type</span> <span class="dt">StatePredicate</span> var val <span class="ot">=</span> <span class="dt">State</span> var val <span class="ot">-&gt;</span> <span class="dt">Bool</span></span></code></pre></div>
 <p>An <em>effect</em> is a state transformation, which modifies the state in some way.</p>
 <div class="sourceCode" id="cb4"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="kw">type</span> <span class="dt">Effect</span> var val <span class="ot">=</span> <span class="dt">State</span> var val <span class="ot">-&gt;</span> <span class="dt">State</span> var val</span></code></pre></div>
-<p>Finally, a <em>program graph</em> is defined by a set of guarded transitions, a set of initial locations, and an initial state.</p>
+<p>Finally, a <em>program graph</em> is defined by a set of initial locations, an initial state, a set of guarded transitions, and an effect function, mapping each action of the transitions to an <code>Effect</code> that modifies the state.</p>
 <div class="sourceCode" id="cb5"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="kw">data</span> <span class="dt">ProgramGraph</span> loc action var val <span class="ot">=</span> <span class="dt">ProgramGraph</span></span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>  {<span class="ot"> pgTransitions ::</span> loc <span class="ot">-&gt;</span> [(<span class="dt">StatePredicate</span> var val, action, loc)]</span>
-<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>  ,<span class="ot"> pgEffect ::</span> action <span class="ot">-&gt;</span> <span class="dt">Effect</span> var val</span>
-<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>  ,<span class="ot"> pgInitialLocations ::</span> [loc]</span>
-<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>  ,<span class="ot"> pgInitialState ::</span> <span class="dt">State</span> var val</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>  {<span class="ot"> pgInitialLocations ::</span> [loc]</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>  ,<span class="ot"> pgInitialState ::</span> <span class="dt">State</span> var val</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>  ,<span class="ot"> pgTransitions ::</span> loc <span class="ot">-&gt;</span> [(<span class="dt">StatePredicate</span> var val, action, loc)]</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>  ,<span class="ot"> pgEffect ::</span> action <span class="ot">-&gt;</span> <span class="dt">Effect</span> var val</span>
 <span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>  }</span></code></pre></div>
 <p>The <code>action</code> type is a name for each effect, and the <code>pgEffect</code> field maps each action to its corresponding <code>Effect</code>.</p>
+<h2 id="predicates-and-effects">Predicates and effects</h2>
+<p>Let’s introduce a few functions that will make the process of defining a program graph a bit easier. First, we define some common state predicates:</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="ot">unconditionally ::</span> <span class="dt">StatePredicate</span> var val</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>unconditionally <span class="ot">=</span> <span class="fu">const</span> <span class="dt">True</span></span></code></pre></div>
+<div class="sourceCode" id="cb7"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="ot">(!==) ::</span> (<span class="dt">Ord</span> var, <span class="dt">Eq</span> val) <span class="ot">=&gt;</span> var <span class="ot">-&gt;</span> val <span class="ot">-&gt;</span> <span class="dt">StatePredicate</span> var val</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>(var <span class="op">!==</span> val) state <span class="ot">=</span> state <span class="op">!</span> var <span class="op">==</span> val</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>infix <span class="dv">4</span> <span class="op">!==</span></span></code></pre></div>
+<div class="sourceCode" id="cb8"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="ot">(!&gt;) ::</span> (<span class="dt">Ord</span> var, <span class="dt">Ord</span> val) <span class="ot">=&gt;</span> var <span class="ot">-&gt;</span> val <span class="ot">-&gt;</span> <span class="dt">StatePredicate</span> var val</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>(var <span class="op">!&gt;</span> val) state <span class="ot">=</span> state <span class="op">!</span> var <span class="op">&gt;</span> val</span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>infix <span class="dv">4</span> <span class="op">!&gt;</span></span></code></pre></div>
+<div class="sourceCode" id="cb9"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="ot">(!&lt;) ::</span> (<span class="dt">Ord</span> var, <span class="dt">Ord</span> val) <span class="ot">=&gt;</span> var <span class="ot">-&gt;</span> val <span class="ot">-&gt;</span> <span class="dt">StatePredicate</span> var val</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>(var <span class="op">!&lt;</span> val) state <span class="ot">=</span> state <span class="op">!</span> var <span class="op">&lt;</span> val</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>infix <span class="dv">4</span> <span class="op">!&lt;</span></span></code></pre></div>
+<p>And the following operators are convenient for constructing effects:</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="ot">(=:) ::</span> <span class="dt">Ord</span> var <span class="ot">=&gt;</span> var <span class="ot">-&gt;</span> val <span class="ot">-&gt;</span> <span class="dt">Effect</span> var val</span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>(<span class="op">=:</span>) <span class="ot">=</span> insert</span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>infix <span class="dv">2</span> <span class="op">=:</span></span></code></pre></div>
+<div class="sourceCode" id="cb11"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="ot">(+=:) ::</span> (<span class="dt">Ord</span> var, <span class="dt">Num</span> val) <span class="ot">=&gt;</span> var <span class="ot">-&gt;</span> val <span class="ot">-&gt;</span> <span class="dt">Effect</span> var val</span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>var <span class="op">+=:</span> val <span class="ot">=</span> adjust (<span class="op">+</span>val) var</span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>infix <span class="dv">2</span> <span class="op">+=:</span></span></code></pre></div>
+<div class="sourceCode" id="cb12"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="ot">(-=:) ::</span> (<span class="dt">Ord</span> var, <span class="dt">Num</span> val) <span class="ot">=&gt;</span> var <span class="ot">-&gt;</span> val <span class="ot">-&gt;</span> <span class="dt">Effect</span> var val</span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>var <span class="op">-=:</span> val <span class="ot">=</span> adjust (<span class="fu">subtract</span> val) var</span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>infix <span class="dv">2</span> <span class="op">-=:</span></span></code></pre></div>
+<div class="sourceCode" id="cb13"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="ot">reset ::</span> <span class="dt">State</span> var val <span class="ot">-&gt;</span> <span class="dt">Effect</span> var val</span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a>reset <span class="ot">=</span> <span class="fu">const</span></span></code></pre></div>
 <h2 id="example-soda-machine">Example: Soda Machine</h2>
 <p>Let’s write a program that simulates a soda machine. The machine contains two types of drinks: soda, and beer. Each of them costs a single coin.</p>
 <p>There are three variables in our program: the number of coins in the machine, the number of sodas in the machine, and the number of beers in the machine. We have two locations in our program: <code>Start</code> and <code>Select</code>. In <code>Start</code>, the machine is idle, waiting for a customer to insert a coin, or for a technician to collect the coins and refill the beverages. In <code>Select</code>, the customer has inserted a coin, and the machine can either dispense a soda or a beer. Alternatively, the customer may push the “Return Coin” button, and his coin is returned to him.</p>
 <p>Before defining the soda machine program graph, we first introduce a few functions that will make the process feel a bit more like writing imperative code. The following operators are convenient for constructing state conditions:</p>
-<div class="sourceCode" id="cb6"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="ot">unconditionally ::</span> <span class="dt">StatePredicate</span> var val</span>
-<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>unconditionally <span class="ot">=</span> <span class="fu">const</span> <span class="dt">True</span></span>
-<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="ot">(!==) ::</span> (<span class="dt">Ord</span> var, <span class="dt">Eq</span> val) <span class="ot">=&gt;</span> var <span class="ot">-&gt;</span> val <span class="ot">-&gt;</span> <span class="dt">StatePredicate</span> var val</span>
-<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>(var <span class="op">!==</span> val) state <span class="ot">=</span> state <span class="op">!</span> var <span class="op">==</span> val</span>
-<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>infix <span class="dv">4</span> <span class="op">!==</span></span>
-<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a><span class="ot">(!&gt;) ::</span> (<span class="dt">Ord</span> var, <span class="dt">Ord</span> val) <span class="ot">=&gt;</span> var <span class="ot">-&gt;</span> val <span class="ot">-&gt;</span> <span class="dt">StatePredicate</span> var val</span>
-<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>(var <span class="op">!&gt;</span> val) state <span class="ot">=</span> state <span class="op">!</span> var <span class="op">&gt;</span> val</span>
-<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a>infix <span class="dv">4</span> <span class="op">!&gt;</span></span>
-<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a><span class="ot">(!&lt;) ::</span> (<span class="dt">Ord</span> var, <span class="dt">Ord</span> val) <span class="ot">=&gt;</span> var <span class="ot">-&gt;</span> val <span class="ot">-&gt;</span> <span class="dt">StatePredicate</span> var val</span>
-<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a>(var <span class="op">!&lt;</span> val) state <span class="ot">=</span> state <span class="op">!</span> var <span class="op">&lt;</span> val</span>
-<span id="cb6-14"><a href="#cb6-14" aria-hidden="true" tabindex="-1"></a>infix <span class="dv">4</span> <span class="op">!&lt;</span></span></code></pre></div>
-<p>And the following operators are convenient for constructing effects:</p>
-<div class="sourceCode" id="cb7"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="ot">(=:) ::</span> <span class="dt">Ord</span> var <span class="ot">=&gt;</span> var <span class="ot">-&gt;</span> val <span class="ot">-&gt;</span> <span class="dt">Effect</span> var val</span>
-<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>(<span class="op">=:</span>) <span class="ot">=</span> insert</span>
-<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>infix <span class="dv">2</span> <span class="op">=:</span></span>
-<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a><span class="ot">(+=:) ::</span> (<span class="dt">Ord</span> var, <span class="dt">Num</span> val) <span class="ot">=&gt;</span> var <span class="ot">-&gt;</span> val <span class="ot">-&gt;</span> <span class="dt">Effect</span> var val</span>
-<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>var <span class="op">+=:</span> val <span class="ot">=</span> adjust (<span class="op">+</span>val) var</span>
-<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>infix <span class="dv">2</span> <span class="op">+=:</span></span>
-<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a><span class="ot">(-=:) ::</span> (<span class="dt">Ord</span> var, <span class="dt">Num</span> val) <span class="ot">=&gt;</span> var <span class="ot">-&gt;</span> val <span class="ot">-&gt;</span> <span class="dt">Effect</span> var val</span>
-<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a>var <span class="op">-=:</span> val <span class="ot">=</span> adjust (<span class="fu">subtract</span> val) var</span>
-<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a>infix <span class="dv">2</span> <span class="op">-=:</span></span>
-<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-13"><a href="#cb7-13" aria-hidden="true" tabindex="-1"></a><span class="ot">reset ::</span> <span class="dt">State</span> var val <span class="ot">-&gt;</span> <span class="dt">Effect</span> var val</span>
-<span id="cb7-14"><a href="#cb7-14" aria-hidden="true" tabindex="-1"></a>reset <span class="ot">=</span> <span class="fu">const</span></span></code></pre></div>
 <p>Now, let’s create a program graph representing the soda machine. First we will define our set of variables, locations, and actions:</p>
-<div class="sourceCode" id="cb8"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="kw">data</span> <span class="dt">SodaMachineVar</span> <span class="ot">=</span> <span class="dt">NumCoins</span> <span class="op">|</span> <span class="dt">NumSodas</span> <span class="op">|</span> <span class="dt">NumBeers</span></span>
-<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>  <span class="kw">deriving</span> (<span class="dt">Show</span>, <span class="dt">Eq</span>, <span class="dt">Ord</span>)</span></code></pre></div>
-<div class="sourceCode" id="cb9"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="kw">data</span> <span class="dt">SodaMachineLoc</span> <span class="ot">=</span> <span class="dt">Start</span> <span class="op">|</span> <span class="dt">Select</span></span>
-<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>  <span class="kw">deriving</span> (<span class="dt">Show</span>, <span class="dt">Eq</span>, <span class="dt">Ord</span>)</span></code></pre></div>
-<div class="sourceCode" id="cb10"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="kw">data</span> <span class="dt">SodaMachineAction</span> <span class="ot">=</span> <span class="dt">InsertCoin</span></span>
-<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>                       <span class="op">|</span> <span class="dt">GetBeer</span></span>
-<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>                       <span class="op">|</span> <span class="dt">GetSoda</span></span>
-<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>                       <span class="op">|</span> <span class="dt">ReturnCoin</span></span>
-<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>                       <span class="op">|</span> <span class="dt">ServiceMachine</span></span>
-<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a>  <span class="kw">deriving</span> (<span class="dt">Show</span>, <span class="dt">Eq</span>, <span class="dt">Ord</span>)</span></code></pre></div>
+<div class="sourceCode" id="cb14"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="kw">data</span> <span class="dt">SodaMachineVar</span> <span class="ot">=</span> <span class="dt">NumCoins</span> <span class="op">|</span> <span class="dt">NumSodas</span> <span class="op">|</span> <span class="dt">NumBeers</span></span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>  <span class="kw">deriving</span> (<span class="dt">Show</span>, <span class="dt">Eq</span>, <span class="dt">Ord</span>)</span></code></pre></div>
+<div class="sourceCode" id="cb15"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="kw">data</span> <span class="dt">SodaMachineLoc</span> <span class="ot">=</span> <span class="dt">Start</span> <span class="op">|</span> <span class="dt">Select</span></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>  <span class="kw">deriving</span> (<span class="dt">Show</span>, <span class="dt">Eq</span>, <span class="dt">Ord</span>)</span></code></pre></div>
+<div class="sourceCode" id="cb16"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="kw">data</span> <span class="dt">SodaMachineAction</span> <span class="ot">=</span> <span class="dt">InsertCoin</span></span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a>                       <span class="op">|</span> <span class="dt">GetBeer</span></span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a>                       <span class="op">|</span> <span class="dt">GetSoda</span></span>
+<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a>                       <span class="op">|</span> <span class="dt">ReturnCoin</span></span>
+<span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a>                       <span class="op">|</span> <span class="dt">ServiceMachine</span></span>
+<span id="cb16-6"><a href="#cb16-6" aria-hidden="true" tabindex="-1"></a>  <span class="kw">deriving</span> (<span class="dt">Show</span>, <span class="dt">Eq</span>, <span class="dt">Ord</span>)</span></code></pre></div>
 <p>Since all the variables are integer-valued, we can use <code>Int</code> as the value type for our program graph.</p>
-<div class="sourceCode" id="cb11"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="ot">soda_machine ::</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">ProgramGraph</span> <span class="dt">SodaMachineLoc</span> <span class="dt">SodaMachineAction</span> <span class="dt">SodaMachineVar</span> <span class="dt">Int</span></span>
-<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>soda_machine max_sodas max_beers <span class="ot">=</span></span>
-<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>  <span class="kw">let</span> initial <span class="ot">=</span> fromList [ (<span class="dt">NumCoins</span>, <span class="dv">0</span>)</span>
-<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a>                         , (<span class="dt">NumSodas</span>, max_sodas)</span>
-<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a>                         , (<span class="dt">NumBeers</span>, max_beers) ]</span>
-<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a>  <span class="kw">in</span> <span class="dt">ProgramGraph</span></span>
-<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a>  { pgTransitions <span class="ot">=</span> \loc <span class="ot">-&gt;</span> <span class="kw">case</span> loc <span class="kw">of</span></span></code></pre></div>
+<div class="sourceCode" id="cb17"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="ot">soda_machine ::</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">ProgramGraph</span> <span class="dt">SodaMachineLoc</span> <span class="dt">SodaMachineAction</span> <span class="dt">SodaMachineVar</span> <span class="dt">Int</span></span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a>soda_machine max_sodas max_beers <span class="ot">=</span></span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a>  <span class="kw">let</span> initial <span class="ot">=</span> fromList [ (<span class="dt">NumCoins</span>, <span class="dv">0</span>)</span>
+<span id="cb17-4"><a href="#cb17-4" aria-hidden="true" tabindex="-1"></a>                         , (<span class="dt">NumSodas</span>, max_sodas)</span>
+<span id="cb17-5"><a href="#cb17-5" aria-hidden="true" tabindex="-1"></a>                         , (<span class="dt">NumBeers</span>, max_beers) ]</span>
+<span id="cb17-6"><a href="#cb17-6" aria-hidden="true" tabindex="-1"></a>  <span class="kw">in</span> <span class="dt">ProgramGraph</span></span>
+<span id="cb17-7"><a href="#cb17-7" aria-hidden="true" tabindex="-1"></a>  { pgTransitions <span class="ot">=</span> \loc <span class="ot">-&gt;</span> <span class="kw">case</span> loc <span class="kw">of</span></span></code></pre></div>
 <p>The <code>Start</code> location has two outgoing guarded transitions. If the customer inserts a coin, we transition to the <code>Select</code> location and increment the number of coins in the machine. If the technician services the machine, we return the machine to the initial state, setting the number of coins to <code>0</code> and filling the beers and sodas to the maximum capacity.</p>
-<div class="sourceCode" id="cb12"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a>      <span class="dt">Start</span> <span class="ot">-&gt;</span> [ ( unconditionally, <span class="dt">InsertCoin</span>    , <span class="dt">Select</span> )</span>
-<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>               , ( unconditionally, <span class="dt">ServiceMachine</span>, <span class="dt">Start</span>  ) ]</span></code></pre></div>
+<div class="sourceCode" id="cb18"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a>      <span class="dt">Start</span> <span class="ot">-&gt;</span> [ ( unconditionally, <span class="dt">InsertCoin</span>    , <span class="dt">Select</span> )</span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a>               , ( unconditionally, <span class="dt">ServiceMachine</span>, <span class="dt">Start</span>  ) ]</span></code></pre></div>
 <p>In the <code>Select</code> location, the customer has already inserted a coin, and is selecting a drink. If the number of sodas is positive, then the customer can select a soda, at which point the number of sodas is decremented and the machine goes to location <code>Start</code>. The same holds for beer. Also, the user may press the “Return Coin” button after inserting a coin, at which point the machine unconditionally returns the coin.</p>
-<div class="sourceCode" id="cb13"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a>      <span class="dt">Select</span> <span class="ot">-&gt;</span> [ ( <span class="dt">NumSodas</span> <span class="op">!&gt;</span> <span class="dv">0</span>  , <span class="dt">GetSoda</span>   , <span class="dt">Start</span> )</span>
-<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a>                , ( <span class="dt">NumBeers</span> <span class="op">!&gt;</span> <span class="dv">0</span>  , <span class="dt">GetBeer</span>   , <span class="dt">Start</span> )</span>
-<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>                , ( unconditionally, <span class="dt">ReturnCoin</span>, <span class="dt">Start</span> ) ]</span></code></pre></div>
+<div class="sourceCode" id="cb19"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a>      <span class="dt">Select</span> <span class="ot">-&gt;</span> [ ( <span class="dt">NumSodas</span> <span class="op">!&gt;</span> <span class="dv">0</span>  , <span class="dt">GetSoda</span>   , <span class="dt">Start</span> )</span>
+<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a>                , ( <span class="dt">NumBeers</span> <span class="op">!&gt;</span> <span class="dv">0</span>  , <span class="dt">GetBeer</span>   , <span class="dt">Start</span> )</span>
+<span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a>                , ( unconditionally, <span class="dt">ReturnCoin</span>, <span class="dt">Start</span> ) ]</span></code></pre></div>
 <p>Now, for each action, we define the effect it has on the program state:</p>
-<div class="sourceCode" id="cb14"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a>  , pgEffect <span class="ot">=</span> \action <span class="ot">-&gt;</span> <span class="kw">case</span> action <span class="kw">of</span></span>
-<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>      <span class="dt">InsertCoin</span>     <span class="ot">-&gt;</span> <span class="dt">NumCoins</span> <span class="op">+=:</span> <span class="dv">1</span></span>
-<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a>      <span class="dt">GetSoda</span>        <span class="ot">-&gt;</span> <span class="dt">NumSodas</span> <span class="op">-=:</span> <span class="dv">1</span></span>
-<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a>      <span class="dt">GetBeer</span>        <span class="ot">-&gt;</span> <span class="dt">NumBeers</span> <span class="op">-=:</span> <span class="dv">1</span></span>
-<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a>      <span class="dt">ReturnCoin</span>     <span class="ot">-&gt;</span> <span class="dt">NumCoins</span> <span class="op">-=:</span> <span class="dv">1</span></span>
-<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a>      <span class="dt">ServiceMachine</span> <span class="ot">-&gt;</span> reset initial</span></code></pre></div>
+<div class="sourceCode" id="cb20"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a>  , pgEffect <span class="ot">=</span> \action <span class="ot">-&gt;</span> <span class="kw">case</span> action <span class="kw">of</span></span>
+<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a>      <span class="dt">InsertCoin</span>     <span class="ot">-&gt;</span> <span class="dt">NumCoins</span> <span class="op">+=:</span> <span class="dv">1</span></span>
+<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a>      <span class="dt">GetSoda</span>        <span class="ot">-&gt;</span> <span class="dt">NumSodas</span> <span class="op">-=:</span> <span class="dv">1</span></span>
+<span id="cb20-4"><a href="#cb20-4" aria-hidden="true" tabindex="-1"></a>      <span class="dt">GetBeer</span>        <span class="ot">-&gt;</span> <span class="dt">NumBeers</span> <span class="op">-=:</span> <span class="dv">1</span></span>
+<span id="cb20-5"><a href="#cb20-5" aria-hidden="true" tabindex="-1"></a>      <span class="dt">ReturnCoin</span>     <span class="ot">-&gt;</span> <span class="dt">NumCoins</span> <span class="op">-=:</span> <span class="dv">1</span></span>
+<span id="cb20-6"><a href="#cb20-6" aria-hidden="true" tabindex="-1"></a>      <span class="dt">ServiceMachine</span> <span class="ot">-&gt;</span> reset initial</span></code></pre></div>
 <p>The machine starts in location <code>Start</code>, and is initially full of both soda and beer.</p>
-<div class="sourceCode" id="cb15"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a>  , pgInitialLocations <span class="ot">=</span> [<span class="dt">Start</span>]</span>
-<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>  , pgInitialState <span class="ot">=</span> initial</span>
-<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>  }</span></code></pre></div>
-<h2 id="program-graphs-to-transition-systems">Program Graphs to Transition Systems</h2>
+<div class="sourceCode" id="cb21"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a>  , pgInitialLocations <span class="ot">=</span> [<span class="dt">Start</span>]</span>
+<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a>  , pgInitialState <span class="ot">=</span> initial</span>
+<span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a>  }</span></code></pre></div>
+<h1 id="converting-a-program-graph-to-a-transition-system">Converting a Program Graph to a Transition System</h1>
 <p>We’d like to check properties of imperative programs using the machinery developed in the previous post. First, though, we’ll need to write a function that converts a program graph to a transition system.</p>
-<div class="sourceCode" id="cb16"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="kw">data</span> <span class="dt">PGProp</span> loc ap <span class="ot">=</span> <span class="dt">PGInLoc</span> loc <span class="op">|</span> <span class="dt">PGStateProp</span> ap</span></code></pre></div>
-<div class="sourceCode" id="cb17"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="ot">pgToTS ::</span> <span class="dt">Eq</span> loc</span>
-<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a>       <span class="ot">=&gt;</span> <span class="dt">ProgramGraph</span> loc action var val</span>
-<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a>       <span class="ot">-&gt;</span> [ap]</span>
-<span id="cb17-4"><a href="#cb17-4" aria-hidden="true" tabindex="-1"></a>       <span class="ot">-&gt;</span> (ap <span class="ot">-&gt;</span> <span class="dt">StatePredicate</span> var val)</span>
-<span id="cb17-5"><a href="#cb17-5" aria-hidden="true" tabindex="-1"></a>       <span class="ot">-&gt;</span> <span class="dt">TransitionSystem</span> (loc, <span class="dt">State</span> var val) action (<span class="dt">PGProp</span> loc ap)</span></code></pre></div>
+<div class="sourceCode" id="cb22"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a><span class="kw">data</span> <span class="dt">PGProp</span> loc ap <span class="ot">=</span> <span class="dt">PGInLoc</span> loc <span class="op">|</span> <span class="dt">PGStateProp</span> ap</span>
+<span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a>  <span class="kw">deriving</span> (<span class="dt">Show</span>, <span class="dt">Eq</span>, <span class="dt">Ord</span>)</span></code></pre></div>
+<div class="sourceCode" id="cb23"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a><span class="ot">pgToTS ::</span> <span class="dt">Eq</span> loc</span>
+<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a>       <span class="ot">=&gt;</span> <span class="dt">ProgramGraph</span> loc action var val</span>
+<span id="cb23-3"><a href="#cb23-3" aria-hidden="true" tabindex="-1"></a>       <span class="ot">-&gt;</span> [ap]</span>
+<span id="cb23-4"><a href="#cb23-4" aria-hidden="true" tabindex="-1"></a>       <span class="ot">-&gt;</span> (ap <span class="ot">-&gt;</span> <span class="dt">StatePredicate</span> var val)</span>
+<span id="cb23-5"><a href="#cb23-5" aria-hidden="true" tabindex="-1"></a>       <span class="ot">-&gt;</span> <span class="dt">TransitionSystem</span> (loc, <span class="dt">State</span> var val) action (<span class="dt">PGProp</span> loc ap)</span></code></pre></div>
 <p>For a program graph with locations <code>loc</code>, variables <code>var</code>, and values <code>val</code>, the states of the corresponding transition system will be pairs <code>(loc, State var val)</code>. In other words, the state of the transition system has two parts: 1) where we are in the program (the <code>loc</code>ation), and 2) what the concrete <code>State</code>s of the global variables are.</p>
 <p>The set of atomic propositions will consist of which location we are currently in, as well as the set of all guards we could possibly define over the current state. This will allow us to state a very broad class of properties to check.</p>
 <p>Let’s walk through the definition of <code>pgToTS</code>.</p>
-<div class="sourceCode" id="cb18"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a>pgToTS pg aps toPred <span class="ot">=</span> <span class="dt">TransitionSystem</span></span></code></pre></div>
+<div class="sourceCode" id="cb24"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a>pgToTS pg aps toPred <span class="ot">=</span> <span class="dt">TransitionSystem</span></span></code></pre></div>
 <p>The initial states of the transition system will be all pairs <code>(loc, state0)</code> where <code>l</code> is an initial location of the program graph, and <code>state0</code> is the initial state of the program graph.</p>
-<div class="sourceCode" id="cb19"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a>  { tsInitialStates <span class="ot">=</span> [ (loc, pgInitialState pg)</span>
-<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a>                      <span class="op">|</span> loc <span class="ot">&lt;-</span> pgInitialLocations pg ]</span></code></pre></div>
+<div class="sourceCode" id="cb25"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a>  { tsInitialStates <span class="ot">=</span> [ (loc, pgInitialState pg)</span>
+<span id="cb25-2"><a href="#cb25-2" aria-hidden="true" tabindex="-1"></a>                      <span class="op">|</span> loc <span class="ot">&lt;-</span> pgInitialLocations pg ]</span></code></pre></div>
 <p>Each <code>(loc, state)</code> pair is is labeled with the proposition that is <code>True</code> for location <code>loc</code> and no other locations, and is also <code>True</code> for all state conditions that are satisfied by <code>state</code>.</p>
-<div class="sourceCode" id="cb20"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a>  , tsLabel <span class="ot">=</span> \(loc, state) <span class="ot">-&gt;</span> <span class="dt">PGInLoc</span> loc <span class="op">:</span></span>
-<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a>                               [ <span class="dt">PGStateProp</span> ap <span class="op">|</span> ap <span class="ot">&lt;-</span> aps, toPred ap state ]</span></code></pre></div>
+<div class="sourceCode" id="cb26"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a>  , tsLabel <span class="ot">=</span> \(loc, state) <span class="ot">-&gt;</span> <span class="dt">PGInLoc</span> loc <span class="op">:</span></span>
+<span id="cb26-2"><a href="#cb26-2" aria-hidden="true" tabindex="-1"></a>                               [ <span class="dt">PGStateProp</span> ap <span class="op">|</span> ap <span class="ot">&lt;-</span> aps, toPred ap state ]</span></code></pre></div>
 <p>Given a state <code>(loc, state)</code> in our transition system, we have an outgoing transition for every transition in the program graph from <code>loc</code> whose guard is satisfied by <code>state</code>.</p>
-<div class="sourceCode" id="cb21"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a>  , tsTransitions <span class="ot">=</span> \(loc, state) <span class="ot">-&gt;</span></span>
-<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a>      [ (action, (loc&#39;, pgEffect pg action state))</span>
-<span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a>      <span class="op">|</span> (guard, action, loc&#39;) <span class="ot">&lt;-</span> pgTransitions pg loc</span>
-<span id="cb21-4"><a href="#cb21-4" aria-hidden="true" tabindex="-1"></a>      , guard state ]</span>
-<span id="cb21-5"><a href="#cb21-5" aria-hidden="true" tabindex="-1"></a>  }</span></code></pre></div>
+<div class="sourceCode" id="cb27"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a>  , tsTransitions <span class="ot">=</span> \(loc, state) <span class="ot">-&gt;</span></span>
+<span id="cb27-2"><a href="#cb27-2" aria-hidden="true" tabindex="-1"></a>      [ (action, (loc&#39;, pgEffect pg action state))</span>
+<span id="cb27-3"><a href="#cb27-3" aria-hidden="true" tabindex="-1"></a>      <span class="op">|</span> (guard, action, loc&#39;) <span class="ot">&lt;-</span> pgTransitions pg loc</span>
+<span id="cb27-4"><a href="#cb27-4" aria-hidden="true" tabindex="-1"></a>      , guard state ]</span>
+<span id="cb27-5"><a href="#cb27-5" aria-hidden="true" tabindex="-1"></a>  }</span></code></pre></div>
 <p>We can use this conversion function to check properties of our soda machine program.</p>
 <h2 id="checking-soda-machine-invariants">Checking soda machine invariants</h2>
 <p>One property we would like our soda machine to have is that the number of coins is consistent with the current number of sodas and beers in the machine. In particular, we would like to know that the number of coins, the number of sodas, and the number of beers all add up to a constant number: <code>max_sodas + max_beers</code>.</p>
-<div class="sourceCode" id="cb22"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a><span class="kw">data</span> <span class="dt">SodaMachineProposition</span> <span class="ot">=</span> <span class="dt">Consistent</span></span></code></pre></div>
-<div class="sourceCode" id="cb23"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a><span class="ot">smPropToPred ::</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">SodaMachineProposition</span></span>
-<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a>             <span class="ot">-&gt;</span> <span class="dt">StatePredicate</span> <span class="dt">SodaMachineVar</span> <span class="dt">Int</span></span>
-<span id="cb23-3"><a href="#cb23-3" aria-hidden="true" tabindex="-1"></a>smPropToPred max_sodas max_beers <span class="dt">Consistent</span> state <span class="ot">=</span></span>
-<span id="cb23-4"><a href="#cb23-4" aria-hidden="true" tabindex="-1"></a>  state <span class="op">!</span> <span class="dt">NumCoins</span> <span class="op">+</span> state <span class="op">!</span> <span class="dt">NumSodas</span> <span class="op">+</span> state <span class="op">!</span> <span class="dt">NumBeers</span> <span class="op">==</span></span>
-<span id="cb23-5"><a href="#cb23-5" aria-hidden="true" tabindex="-1"></a>  max_sodas <span class="op">+</span> max_beers</span></code></pre></div>
-<div class="sourceCode" id="cb24"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="co">-- soda_machine_invariant_1 :: Int -&gt; Int -&gt; Proposition (Either SodaMachineLoc (StatePredicate SodaMachineVar Int))</span></span>
-<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a><span class="co">-- soda_machine_invariant_1 max_sodas max_beers =</span></span>
-<span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a><span class="co">--   atom (Right (\state -&gt;</span></span>
-<span id="cb24-4"><a href="#cb24-4" aria-hidden="true" tabindex="-1"></a><span class="co">--     state ! NumCoins + state ! NumSodas + state ! NumBeers ==</span></span>
-<span id="cb24-5"><a href="#cb24-5" aria-hidden="true" tabindex="-1"></a><span class="co">--     max_sodas + max_beers))</span></span></code></pre></div>
+<div class="sourceCode" id="cb28"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a><span class="kw">data</span> <span class="dt">SodaMachineProposition</span> <span class="ot">=</span> <span class="dt">Consistent</span></span>
+<span id="cb28-2"><a href="#cb28-2" aria-hidden="true" tabindex="-1"></a>  <span class="kw">deriving</span> (<span class="dt">Show</span>, <span class="dt">Eq</span>, <span class="dt">Ord</span>)</span></code></pre></div>
+<div class="sourceCode" id="cb29"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a><span class="ot">smPropToPred ::</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> <span class="dt">SodaMachineProposition</span></span>
+<span id="cb29-2"><a href="#cb29-2" aria-hidden="true" tabindex="-1"></a>             <span class="ot">-&gt;</span> <span class="dt">StatePredicate</span> <span class="dt">SodaMachineVar</span> <span class="dt">Int</span></span>
+<span id="cb29-3"><a href="#cb29-3" aria-hidden="true" tabindex="-1"></a>smPropToPred max_sodas max_beers <span class="dt">Consistent</span> state <span class="ot">=</span></span>
+<span id="cb29-4"><a href="#cb29-4" aria-hidden="true" tabindex="-1"></a>  state <span class="op">!</span> <span class="dt">NumCoins</span> <span class="op">+</span> state <span class="op">!</span> <span class="dt">NumSodas</span> <span class="op">+</span> state <span class="op">!</span> <span class="dt">NumBeers</span> <span class="op">==</span></span>
+<span id="cb29-5"><a href="#cb29-5" aria-hidden="true" tabindex="-1"></a>  max_sodas <span class="op">+</span> max_beers</span></code></pre></div>
 <p>Let’s check this property of our soda machine in ghci! We’ll use a maximum capacity of <code>2</code> for both soda and beer:</p>
-<div class="sourceCode" id="cb25"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a>  <span class="op">&gt;</span> checkInvariant (soda_machine_invariant_1 <span class="dv">2</span> <span class="dv">2</span>) (pgToTS (soda_machine <span class="dv">2</span> <span class="dv">2</span>))</span>
-<span id="cb25-2"><a href="#cb25-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">Just</span> [(<span class="dt">Start</span>,fromList [(<span class="dt">NumCoins</span>,<span class="dv">0</span>),(<span class="dt">NumSodas</span>,<span class="dv">2</span>),(<span class="dt">NumBeers</span>,<span class="dv">2</span>)]),(<span class="dt">Select</span>,fromList [(<span class="dt">NumCoins</span>,<span class="dv">1</span>),(<span class="dt">NumSodas</span>,<span class="dv">2</span>),(<span class="dt">NumBeers</span>,<span class="dv">2</span>)])]</span></code></pre></div>
+<div class="sourceCode" id="cb30"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a>  <span class="op">&gt;</span> checkInvariant (soda_machine_invariant_1 <span class="dv">2</span> <span class="dv">2</span>) (pgToTS (soda_machine <span class="dv">2</span> <span class="dv">2</span>))</span>
+<span id="cb30-2"><a href="#cb30-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">Just</span> [(<span class="dt">Start</span>,fromList [(<span class="dt">NumCoins</span>,<span class="dv">0</span>),(<span class="dt">NumSodas</span>,<span class="dv">2</span>),(<span class="dt">NumBeers</span>,<span class="dv">2</span>)]),(<span class="dt">Select</span>,fromList [(<span class="dt">NumCoins</span>,<span class="dv">1</span>),(<span class="dt">NumSodas</span>,<span class="dv">2</span>),(<span class="dt">NumBeers</span>,<span class="dv">2</span>)])]</span></code></pre></div>
 <p>Aha! Our stated property actually doesn’t hold. Immediately after the customer inserts a coin, the system is in an inconsistent state. We can fix this by restricting the invariant so it only applies when we are in the <code>Start</code> state:</p>
-<div class="sourceCode" id="cb26"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="co">-- soda_machine_invariant_2 :: Int -&gt; Int -&gt; Proposition (Either SodaMachineLoc (StatePredicate SodaMachineVar Int))</span></span>
-<span id="cb26-2"><a href="#cb26-2" aria-hidden="true" tabindex="-1"></a><span class="co">-- soda_machine_invariant_2 max_sodas max_beers =</span></span>
-<span id="cb26-3"><a href="#cb26-3" aria-hidden="true" tabindex="-1"></a><span class="co">--   atom (Left Start) .-&gt; soda_machine_invariant_1 max_sodas max_beers</span></span></code></pre></div>
+<div class="sourceCode" id="cb31"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a><span class="co">-- soda_machine_invariant_2 :: Int -&gt; Int -&gt; Proposition (Either SodaMachineLoc (StatePredicate SodaMachineVar Int))</span></span>
+<span id="cb31-2"><a href="#cb31-2" aria-hidden="true" tabindex="-1"></a><span class="co">-- soda_machine_invariant_2 max_sodas max_beers =</span></span>
+<span id="cb31-3"><a href="#cb31-3" aria-hidden="true" tabindex="-1"></a><span class="co">--   atom (Left Start) .-&gt; soda_machine_invariant_1 max_sodas max_beers</span></span></code></pre></div>
 <p>Now, let’s check this new version:</p>
-<div class="sourceCode" id="cb27"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a>  <span class="op">&gt;</span> checkInvariant (soda_machine_invariant_2 <span class="dv">2</span> <span class="dv">2</span>) (pgToTS (soda_machine <span class="dv">2</span> <span class="dv">2</span>))</span>
-<span id="cb27-2"><a href="#cb27-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">Nothing</span></span></code></pre></div>
+<div class="sourceCode" id="cb32"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a>  <span class="op">&gt;</span> checkInvariant (soda_machine_invariant_2 <span class="dv">2</span> <span class="dv">2</span>) (pgToTS (soda_machine <span class="dv">2</span> <span class="dv">2</span>))</span>
+<span id="cb32-2"><a href="#cb32-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">Nothing</span></span></code></pre></div>
 <p>Wonderful! Now we know that whenever the machine is in the <code>Start</code> state, the number of coins is equal to the number of sodas and beers that were purchased.</p>
-<h2 id="conclusion">Conclusion</h2>
+<h1 id="conclusion">Conclusion</h1>
 <p>In this post, we explored how to convert a higher-level imperative “program graph”, with a global state and guarded transitions, can be “compiled” or “reified” into a transition system. We walked through an example program graph representing a soda machine, converted this graph to a transition system, and checked an invariant of that system to show that our machine has a nice property.</p>
 <p>In the next post, we’ll explore how a few techniques for modeling concurrent processes.</p>
 </body>

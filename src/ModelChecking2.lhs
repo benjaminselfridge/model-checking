@@ -1,30 +1,25 @@
-Model Checking in Haskell, Part 2: From Programs to Transition Systems
-======================================================================
-
 In this post, we'll talk about how to convert an imperative computer program
-into a transition system. We'll then look at an example program, and show how to
-use this conversion routine to check interesting invariants about the program's
+into a transition system. We'll look at an example program, and show how to use
+this conversion routine to check interesting invariants about the program's
 behavior.
 
-Preamble:
+Program Graphs
+==
 
 > module ModelChecking2 where
 >
 > import ModelChecking1
 > import Data.Map.Strict (Map, (!), fromList, adjust, insert)
 
-Program Graphs
---------------
-
 Our first task will be to define a very simple imperative programming language.
 Our program representation will consist of a set of *locations*, which can be
 thought of (roughly) as a line of code in a language like C. With each such
 location, we associate a collection of *guarded transitions*. A guarded
-transition is a triple `(guard, action, loc)`. If `guard` is true of the current
-global state, then modify the state by performing `action` and go to location
-`loc`." When a guard is satisified in a given state, the corresponding
-transition is said to be *enabled*. When multiple transitions are enabled, one
-of them is chosen nondeterministically.
+transition is a triple `(guard, action, loc)`, with the meaning: "If `guard` is
+true of the current global state, then modify the state by performing `action`
+and go to location `loc`." When a guard is satisified in a given state, the
+corresponding transition is said to be *enabled*. When multiple transitions are
+enabled, one of them is chosen nondeterministically.
 
 We will call this construction a *program graph*. To define it in Haskell, we
 first define a couple auxiliary notions.
@@ -41,21 +36,60 @@ An *effect* is a state transformation, which modifies the state in some way.
 
 > type Effect var val = State var val -> State var val
 
-Finally, a *program graph* is defined by a set of guarded transitions, a set of
-initial locations, and an initial state.
+Finally, a *program graph* is defined by a set of initial locations, an initial
+state, a set of guarded transitions, and an effect function, mapping each action
+of the transitions to an `Effect` that modifies the state.
 
 > data ProgramGraph loc action var val = ProgramGraph
->   { pgTransitions :: loc -> [(StatePredicate var val, action, loc)]
->   , pgEffect :: action -> Effect var val
->   , pgInitialLocations :: [loc]
+>   { pgInitialLocations :: [loc]
 >   , pgInitialState :: State var val
+>   , pgTransitions :: loc -> [(StatePredicate var val, action, loc)]
+>   , pgEffect :: action -> Effect var val
 >   }
 
 The `action` type is a name for each effect, and the `pgEffect` field maps each
 action to its corresponding `Effect`.
 
+Predicates and effects
+--
+
+Let's introduce a few functions that will make the process of defining a program
+graph a bit easier. First, we define some common state predicates:
+
+> unconditionally :: StatePredicate var val
+> unconditionally = const True
+
+> (!==) :: (Ord var, Eq val) => var -> val -> StatePredicate var val
+> (var !== val) state = state ! var == val
+> infix 4 !==
+
+> (!>) :: (Ord var, Ord val) => var -> val -> StatePredicate var val
+> (var !> val) state = state ! var > val
+> infix 4 !>
+
+> (!<) :: (Ord var, Ord val) => var -> val -> StatePredicate var val
+> (var !< val) state = state ! var < val
+> infix 4 !<
+
+And the following operators are convenient for constructing effects:
+
+> (=:) :: Ord var => var -> val -> Effect var val
+> (=:) = insert
+> infix 2 =:
+
+> (+=:) :: (Ord var, Num val) => var -> val -> Effect var val
+> var +=: val = adjust (+val) var
+> infix 2 +=:
+
+> (-=:) :: (Ord var, Num val) => var -> val -> Effect var val
+> var -=: val = adjust (subtract val) var
+> infix 2 -=:
+
+> reset :: State var val -> Effect var val
+> reset = const
+
 Example: Soda Machine
----------------------
+--
 
 Let's write a program that simulates a soda machine. The machine contains two
 types of drinks: soda, and beer. Each of them costs a single coin.
@@ -71,38 +105,6 @@ customer may push the "Return Coin" button, and his coin is returned to him.
 Before defining the soda machine program graph, we first introduce a few
 functions that will make the process feel a bit more like writing imperative
 code. The following operators are convenient for constructing state conditions:
-
-> unconditionally :: StatePredicate var val
-> unconditionally = const True
->
-> (!==) :: (Ord var, Eq val) => var -> val -> StatePredicate var val
-> (var !== val) state = state ! var == val
-> infix 4 !==
->
-> (!>) :: (Ord var, Ord val) => var -> val -> StatePredicate var val
-> (var !> val) state = state ! var > val
-> infix 4 !>
->
-> (!<) :: (Ord var, Ord val) => var -> val -> StatePredicate var val
-> (var !< val) state = state ! var < val
-> infix 4 !<
-
-And the following operators are convenient for constructing effects:
-
-> (=:) :: Ord var => var -> val -> Effect var val
-> (=:) = insert
-> infix 2 =:
->
-> (+=:) :: (Ord var, Num val) => var -> val -> Effect var val
-> var +=: val = adjust (+val) var
-> infix 2 +=:
->
-> (-=:) :: (Ord var, Num val) => var -> val -> Effect var val
-> var -=: val = adjust (subtract val) var
-> infix 2 -=:
->
-> reset :: State var val -> Effect var val
-> reset = const
 
 Now, let's create a program graph representing the soda machine. First we will
 define our set of variables, locations, and actions:
@@ -167,8 +169,8 @@ beer.
 >   , pgInitialState = initial
 >   }
 
-Program Graphs to Transition Systems
-------------------------------------
+Converting a Program Graph to a Transition System
+==
 
 We'd like to check properties of imperative programs using the machinery
 developed in the previous post. First, though, we'll need to write a function
@@ -225,7 +227,7 @@ We can use this conversion function to check properties of our soda machine
 program.
 
 Checking soda machine invariants
---------------------------------
+-- 
 
 One property we would like our soda machine to have is that the number of coins
 is consistent with the current number of sodas and beers in the machine. In
@@ -269,7 +271,7 @@ Wonderful! Now we know that whenever the machine is in the `Start` state, the
 number of coins is equal to the number of sodas and beers that were purchased.
 
 Conclusion
-----------
+==
 
 In this post, we explored how to convert a higher-level imperative "program
 graph", with a global state and guarded transitions, can be "compiled" or
