@@ -119,8 +119,8 @@ do not carry any semantic content, but it's often useful to give a name to a
 transition to indicate "what is happening" as the system changes from state to
 another.
 
-In summary, here is the intution behind each of the three fields of a transition
-system.
+In summary, here is the intuition behind each of the three fields of a
+transition system.
 
 * `tsInitialStates ts`: "the states that the system can start in"
 * `tsLabel ts s`: "the set of variables which are true in state `s`"
