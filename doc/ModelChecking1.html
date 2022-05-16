@@ -88,7 +88,7 @@
 </header>
 <nav id="TOC" role="doc-toc">
 <ul>
-<li><a href="#overview">Overview</a></li>
+<li><a href="#what-is-model-checking">What is model checking?</a></li>
 <li><a href="#transition-systems">Transition systems</a>
 <ul>
 <li><a href="#example-traffic-light">Example: Traffic light</a></li>
@@ -101,43 +101,57 @@
 <li><a href="#the-checkinvariant-function">The <code>checkInvariant</code> function</a></li>
 <li><a href="#checking-a-traffic-light-invariant">Checking a traffic light invariant</a></li>
 </ul></li>
-<li><a href="#conclusion">Conclusion</a></li>
+<li><a href="#whats-next">What’s next?</a></li>
 </ul>
 </nav>
-<p>Recently, I’ve been reading a <a href="https://www.amazon.com/Principles-Model-Checking-MIT-Press/dp/026202649X/ref=sr_1_1?crid=2RGC1B0N79HIJ&amp;keywords=principles+of+model+checking&amp;qid=1651762001&amp;sprefix=principles+of+model+checking%2Caps%2C134&amp;sr=8-1">book</a> and watching a <a href="https://www.youtube.com/watch?v=Y5Hg4MvUXc4&amp;list=PLwabKnOFhE38C0o6z_bhlF_uOUlblDTjh">lecture series</a> about model checking. This is a topic I’ve learned a bit about in the past, but never really studied in earnest.</p>
+<p>Recently, I’ve been reading a <a href="https://www.amazon.com/Principles-Model-Checking-MIT-Press/dp/026202649X/ref=sr_1_1?crid=2RGC1B0N79HIJ&amp;keywords=principles+of+model+checking&amp;qid=1651762001&amp;sprefix=principles+of+model+checking%2Caps%2C134&amp;sr=8-1">book</a> and watching a <a href="https://www.youtube.com/watch?v=Y5Hg4MvUXc4&amp;list=PLwabKnOFhE38C0o6z_bhlF_uOUlblDTjh">lecture series</a> about model checking. This is a topic I’ve learned a bit about in the past, but never really studied in earnest. I highly recommend these resources to anyone who is interested in learning more.</p>
 <p>In model checking, we create a <em>model</em> of some sort of stateful artifact, like a computer program, sequential circuit, or even something in the “real world” (like a vending machine or traffic light). Then, we state a <em>property</em> we would like to hold about <em>all possible behaviors</em> of the model. Finally, we check whether this property holds for the model, using a variety of nifty algorithms.</p>
-<p>This series of blog posts constitutes a straightforward introduction to model checking, using Haskell code to express the ideas and implement the algorithms. The intended audience is anyone who knows a bit of Haskell, and who wants to understand what model checking is all about.</p>
+<p>This series of blog posts constitutes a straightforward introduction to model checking, using Haskell code to express the ideas and implement the algorithms. The intended audience is anyone who knows a bit of Haskell, and who wants to understand how model checking works.</p>
 <p>This post was generated with <code>pandoc</code> from a <a href="https://github.com/benjaminselfridge/model-checking/blob/master/src/ModelChecking1.lhs">literate haskell document</a>.</p>
-<h1 id="overview">Overview</h1>
+<h1 id="what-is-model-checking">What is model checking?</h1>
+<p>Modern physical and digital systems can be incredibly complex. They are often composed of multiple interacting subsystems, each with its own internal state. It can become extremely hard to reason about the correctness of these systems, because the details of exactly how and when the system changes state may be subtle.</p>
+<p>There is only one way to get hard guarantees about a complex system: by using <em>mathematical rigor</em> to describe the system in question, to specify the desired property, and to prove or disprove that the system satisfies the property. This can be done entirely manually (i.e. constructing a proof or counterexample by hand), or with the help of some degree of tool automation. Typically, the more automation a technique offers, the more limited it is in other aspects (for instance, in the size of the models that can be verified). Hand proofs, automated theorem proving, abstract interpretation, SAT/SMT solving, BDDs, and model checking are all examples of formal methods techniques, and each of these techniques occupies its own special compromise point in the design space.</p>
+<p>Model checking is at the “high automation/limited scalability” end of this spectrum. Model checking is extremely powerful because it is a push-button process. Once you specify your model and the property you want to check, the computer does the rest. However, the method is fundamentally limited by the “state-explosion” problem. Model checking involves an exhaustive search of the entire state space of a system, and if this space is too big, verification becomes infeasible. Model checking has had most of its success in the hardware domain, where state and control logic are much smaller and simpler than in a typical piece of software. It is a good method to use for <em>finding bugs</em> because it’s great at producing small counterexamples, if they exist.</p>
+<p>In practice, model checking consists of three basic steps:</p>
+<ol type="1">
+<li><p>Capture the essence of the system you want to verify by constructing a <em>model</em> of this system, using a formal language that a model checking tool can understand.</p></li>
+<li><p>Capture the property you want to verify about your model in a property specification language (usually this is the same language in which the model is described).</p></li>
+<li><p>Press “go”, and wait for the tool to either a) declare that the property holds for your model, b) provide a counterexample, or c) give up.</p></li>
+</ol>
+<p>The basic idea of model checking is simple: represent all possible states of your system as nodes in a directed graph, and represent the possible changes from state to state as directed edges from one node to another. Then, checking a property of your system boils down to running some sort of search algorithm on the graph. This graph-based representation is called a <em>transition system</em>.</p>
+<p>The goal of this first post is to introduce the notion of a transition system, and to show how we can verify a simple type of property called an <em>invariant</em>. The example used throughout this post (a traffic light with three states) is a pedagogical one, and it’s very trivial. The point in this first post is not to show you the full power of model checking all at once; it’s to set up a conceptual framework that we can build on in subsequent posts.</p>
+<p>Each post will build on the previous one, and we will gradually move from simple systems and properties to more complex and meaningful ones. By the final post in this series, we will have developed a full-blown model checker in Haskell, and we will use it to verify some non-trivial properties about a cache coherence protocol.</p>
+<h1 id="transition-systems">Transition systems</h1>
 <div class="sourceCode" id="cb1"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">module</span> <span class="dt">ModelChecking1</span> <span class="kw">where</span></span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> <span class="dt">Data.List</span> (find)</span>
 <span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> <span class="dt">System.Random</span> (<span class="dt">RandomGen</span>, randomR)</span></code></pre></div>
-<p>In this post, we will introduce transition systems, and we will state simple properties about them, called <em>invariants</em>. We will also implement a simple model checking algorithm, whose aim is to check that an invariant holds for all reachable states of the system.</p>
-<h1 id="transition-systems">Transition systems</h1>
-<p>A <em>transition system</em> over state set <code>s</code>, action set <code>action</code>, and atomic propositions <code>ap</code> is defined as follows:</p>
+<p>A <em>transition system</em> over state set <code>s</code>, action set <code>action</code>, and atomic propositional variables <code>ap</code> is defined as follows:</p>
 <div class="sourceCode" id="cb2"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">data</span> <span class="dt">TransitionSystem</span> s action ap <span class="ot">=</span> <span class="dt">TransitionSystem</span></span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>  {<span class="ot"> tsInitialStates ::</span> [s]</span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>  ,<span class="ot"> tsLabel         ::</span> s <span class="ot">-&gt;</span> [ap]</span>
 <span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>  ,<span class="ot"> tsTransitions   ::</span> s <span class="ot">-&gt;</span> [(action, s)]</span>
 <span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>  }</span></code></pre></div>
-<p>The intuition behind each of the three fields of a transition system <code>ts</code> is as follows:</p>
+<p>The type <code>s</code> represents all possible states our system can be in; if the system is a traffic light, <code>s</code> might be the set of colors <code>{red, green, yellow}</code>; if it’s a sequential circuit, it might be the current value of a set of bits.</p>
+<p>The type <code>ap</code> represents the relevant properties of a given state. Depending on what property we are interested in for our system, we might choose a corresponding set of variables <code>ap</code> that help us to capture the property using propositional logic. Each element of <code>ap</code> is a boolean-valued variable, and depending on which state the system is in, each such variable may be either true or false. The <code>tsLabel</code> function tells us the <em>true-set</em> of each state. The <em>true-set</em> is simply the set of variables which are true in a given state. If a variable is in this list, then it’s true; if it’s absent from the list, it’s false.</p>
+<p>The type <code>action</code> is simply a “name” for each outgoing transition. These names do not carry any semantic content, but it’s often useful to give a name to a transition to indicate “what is happening” as the system changes from state to another.</p>
+<p>In summary, here is the intution behind each of the three fields of a transition system.</p>
 <ul>
 <li><code>tsInitialStates ts</code>: “the states that the system can start in”</li>
 <li><code>tsLabel ts s</code>: “the set of variables which are true in state <code>s</code>”</li>
 <li><code>tsTransitions ts s</code>: “all of <code>s</code>’s outgoing transitions”</li>
 </ul>
-<p>We interpret the label of a state <code>tsLabel ts s :: [ap]</code> as a <em>true-set</em>, or the set of all variables <code>ap</code> which are true in state <code>s</code>.</p>
-<p>The label of a state is an abstraction of the “internal data” of that state, and the transitions are an abstraction of control flow. Here, a transition is a pair <code>(action, s')</code> where <code>s'</code> is the destination state of the transition, and <code>action</code> is a name for the transition.</p>
+<p>Let’s look at a trivial example of a transition system.</p>
 <h2 id="example-traffic-light">Example: Traffic light</h2>
 <figure>
 <img src="../images/traffic_light.png" style="width:30.0%;height:30.0%" alt="Transition system for a traffic light" /><figcaption aria-hidden="true">Transition system for a traffic light</figcaption>
 </figure>
 <p>We can create a very simple transition system representing the states and transitions of a traffic light. The states <code>s</code> will be the colors red, yellow, and green:</p>
 <div class="sourceCode" id="cb3"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">data</span> <span class="dt">Color</span> <span class="ot">=</span> <span class="dt">Red</span> <span class="op">|</span> <span class="dt">Yellow</span> <span class="op">|</span> <span class="dt">Green</span> <span class="kw">deriving</span> (<span class="dt">Show</span>, <span class="dt">Eq</span>, <span class="dt">Ord</span>)</span></code></pre></div>
+<p>The atomic propositional variables <code>ap</code> that we will use is also <code>Color</code>. The idea is that a color is <code>True</code> in a given state if and only if that color is currently lit up. In this example, states and atomic propositional variables are one and the same; however, this will not always be the case, and when we study more interesting examples, we will use a much richer set of atomic propositional variables.</p>
 <p>There will only be one action:</p>
 <div class="sourceCode" id="cb4"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="kw">data</span> <span class="dt">Change</span> <span class="ot">=</span> <span class="dt">Change</span> <span class="kw">deriving</span> (<span class="dt">Show</span>, <span class="dt">Eq</span>, <span class="dt">Ord</span>)</span></code></pre></div>
-<p>Our set of transitions will allow <code>Red</code> to transition to <code>Green</code>, <code>Green</code> to <code>Yellow</code>, and <code>Yellow</code> to <code>Red</code>:</p>
+<p>Our set of transitions will allow <code>Red</code> to transition to <code>Green</code>, <code>Green</code> to <code>Yellow</code>, and <code>Yellow</code> to <code>Red</code>. Below is the definition of the traffic light’s transition system:</p>
 <div class="sourceCode" id="cb5"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="ot">traffic_light ::</span> <span class="dt">TransitionSystem</span> <span class="dt">Color</span> <span class="dt">Change</span> <span class="dt">Color</span></span>
 <span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>traffic_light <span class="ot">=</span> <span class="dt">TransitionSystem</span></span>
 <span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>  { tsInitialStates <span class="ot">=</span> [<span class="dt">Red</span>]</span>
@@ -147,7 +161,7 @@
 <span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>      <span class="dt">Green</span>  <span class="ot">-&gt;</span> [(<span class="dt">Change</span>, <span class="dt">Yellow</span>)]</span>
 <span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>      <span class="dt">Yellow</span> <span class="ot">-&gt;</span> [(<span class="dt">Change</span>, <span class="dt">Red</span>   )]</span>
 <span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a>  }</span></code></pre></div>
-<p>Notice that we reuse our state type <code>Color</code> as our set of atomic propositions. The label of each state <code>s</code> is <code>[s]</code>: the only color that is “true” in state <code>s</code> is <code>s</code> itself.</p>
+<p>Notice that in each state <code>s</code>, where <code>s</code> is one of the colors <code>Red</code>, <code>Yellow</code>, or <code>Green</code>, the label of <code>s</code> is simply <code>[s]</code>, because the only color that is lit up in state <code>s</code> is <code>s</code> itself.</p>
 <h2 id="running-a-transition-system">Running a transition system</h2>
 <p>A <em>run</em> of a transition system is a finite or infinite path in the underlying graph:</p>
 <div class="sourceCode" id="cb6"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="kw">data</span> <span class="dt">Path</span> s action <span class="ot">=</span> <span class="dt">Path</span> {<span class="ot"> pathHead ::</span> s,<span class="ot"> pathTail ::</span> [(action, s)] }</span>
@@ -182,31 +196,31 @@
 <h1 id="predicates-and-propositions">Predicates and propositions</h1>
 <p>A <em>predicate</em> is any function that maps a value to a boolean:</p>
 <div class="sourceCode" id="cb12"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="kw">type</span> <span class="dt">Predicate</span> a <span class="ot">=</span> a <span class="ot">-&gt;</span> <span class="dt">Bool</span></span></code></pre></div>
-<p>When working with predicates, the following “flipped application” operator is useful:</p>
-<div class="sourceCode" id="cb13"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="ot">(|=) ::</span> a <span class="ot">-&gt;</span> <span class="dt">Predicate</span> a <span class="ot">-&gt;</span> <span class="dt">Bool</span></span>
-<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a>a <span class="op">|=</span> p <span class="ot">=</span> p a</span>
-<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>infix <span class="dv">0</span> <span class="op">|=</span></span></code></pre></div>
 <p>A very simple example of a predicate is <code>true</code>, which holds for all inputs:</p>
-<div class="sourceCode" id="cb14"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="ot">true ::</span> <span class="dt">Predicate</span> a</span>
-<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>true _ <span class="ot">=</span> <span class="dt">True</span></span></code></pre></div>
+<div class="sourceCode" id="cb13"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="ot">true ::</span> <span class="dt">Predicate</span> a</span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a>true _ <span class="ot">=</span> <span class="dt">True</span></span></code></pre></div>
 <p>Similarly, <code>false</code> holds for no inputs:</p>
-<div class="sourceCode" id="cb15"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="ot">false ::</span> <span class="dt">Predicate</span> a</span>
-<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>false _ <span class="ot">=</span> <span class="dt">False</span></span></code></pre></div>
+<div class="sourceCode" id="cb14"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="ot">false ::</span> <span class="dt">Predicate</span> a</span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>false _ <span class="ot">=</span> <span class="dt">False</span></span></code></pre></div>
 <p>We can “lift” the usual boolean operators to work with predicates:</p>
-<div class="sourceCode" id="cb16"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="ot">(.&amp;) ::</span> <span class="dt">Predicate</span> a <span class="ot">-&gt;</span> <span class="dt">Predicate</span> a <span class="ot">-&gt;</span> <span class="dt">Predicate</span> a</span>
-<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a>(p <span class="op">.&amp;</span> q) a <span class="ot">=</span> p a <span class="op">&amp;&amp;</span> q a</span>
-<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a><span class="kw">infixr</span> <span class="dv">3</span> <span class="op">.&amp;</span></span>
-<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a><span class="ot">(.|) ::</span> <span class="dt">Predicate</span> a <span class="ot">-&gt;</span> <span class="dt">Predicate</span> a <span class="ot">-&gt;</span> <span class="dt">Predicate</span> a</span>
-<span id="cb16-6"><a href="#cb16-6" aria-hidden="true" tabindex="-1"></a>(p <span class="op">.|</span> q) a <span class="ot">=</span> p a <span class="op">||</span> q a</span>
-<span id="cb16-7"><a href="#cb16-7" aria-hidden="true" tabindex="-1"></a><span class="kw">infixr</span> <span class="dv">2</span> <span class="op">.|</span></span>
-<span id="cb16-8"><a href="#cb16-8" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb16-9"><a href="#cb16-9" aria-hidden="true" tabindex="-1"></a><span class="ot">pnot ::</span> <span class="dt">Predicate</span> a <span class="ot">-&gt;</span> <span class="dt">Predicate</span> a</span>
-<span id="cb16-10"><a href="#cb16-10" aria-hidden="true" tabindex="-1"></a>pnot p a <span class="ot">=</span> <span class="fu">not</span> (p a)</span>
-<span id="cb16-11"><a href="#cb16-11" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb16-12"><a href="#cb16-12" aria-hidden="true" tabindex="-1"></a><span class="ot">(.-&gt;) ::</span> <span class="dt">Predicate</span> a <span class="ot">-&gt;</span> <span class="dt">Predicate</span> a <span class="ot">-&gt;</span> <span class="dt">Predicate</span> a</span>
-<span id="cb16-13"><a href="#cb16-13" aria-hidden="true" tabindex="-1"></a>(p <span class="op">.-&gt;</span> q) a <span class="ot">=</span> <span class="kw">if</span> p a <span class="kw">then</span> q a <span class="kw">else</span> <span class="dt">True</span></span>
-<span id="cb16-14"><a href="#cb16-14" aria-hidden="true" tabindex="-1"></a><span class="kw">infixr</span> <span class="dv">1</span> <span class="op">.-&gt;</span></span></code></pre></div>
+<div class="sourceCode" id="cb15"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="ot">(.&amp;) ::</span> <span class="dt">Predicate</span> a <span class="ot">-&gt;</span> <span class="dt">Predicate</span> a <span class="ot">-&gt;</span> <span class="dt">Predicate</span> a</span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>(p <span class="op">.&amp;</span> q) a <span class="ot">=</span> p a <span class="op">&amp;&amp;</span> q a</span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a><span class="kw">infixr</span> <span class="dv">3</span> <span class="op">.&amp;</span></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a><span class="ot">(.|) ::</span> <span class="dt">Predicate</span> a <span class="ot">-&gt;</span> <span class="dt">Predicate</span> a <span class="ot">-&gt;</span> <span class="dt">Predicate</span> a</span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a>(p <span class="op">.|</span> q) a <span class="ot">=</span> p a <span class="op">||</span> q a</span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a><span class="kw">infixr</span> <span class="dv">2</span> <span class="op">.|</span></span>
+<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a><span class="ot">pnot ::</span> <span class="dt">Predicate</span> a <span class="ot">-&gt;</span> <span class="dt">Predicate</span> a</span>
+<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a>pnot p a <span class="ot">=</span> <span class="fu">not</span> (p a)</span>
+<span id="cb15-11"><a href="#cb15-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-12"><a href="#cb15-12" aria-hidden="true" tabindex="-1"></a><span class="ot">(.-&gt;) ::</span> <span class="dt">Predicate</span> a <span class="ot">-&gt;</span> <span class="dt">Predicate</span> a <span class="ot">-&gt;</span> <span class="dt">Predicate</span> a</span>
+<span id="cb15-13"><a href="#cb15-13" aria-hidden="true" tabindex="-1"></a>(p <span class="op">.-&gt;</span> q) a <span class="ot">=</span> <span class="kw">if</span> p a <span class="kw">then</span> q a <span class="kw">else</span> <span class="dt">True</span></span>
+<span id="cb15-14"><a href="#cb15-14" aria-hidden="true" tabindex="-1"></a><span class="kw">infixr</span> <span class="dv">1</span> <span class="op">.-&gt;</span></span></code></pre></div>
+<p>When working with predicates, the following “flipped application” operator is often useful:</p>
+<div class="sourceCode" id="cb16"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="ot">(|=) ::</span> a <span class="ot">-&gt;</span> <span class="dt">Predicate</span> a <span class="ot">-&gt;</span> <span class="dt">Bool</span></span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a>a <span class="op">|=</span> p <span class="ot">=</span> p a</span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a>infix <span class="dv">0</span> <span class="op">|=</span></span></code></pre></div>
 <p>A <em>proposition</em> over a set of atomic propositional variables <code>ap</code> is a predicate over true-sets of <code>ap</code>:</p>
 <div class="sourceCode" id="cb17"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="kw">type</span> <span class="dt">Proposition</span> ap <span class="ot">=</span> <span class="dt">Predicate</span> [ap]</span></code></pre></div>
 <p>Given an atomic propositional variable <code>ap</code>, we can form the proposition “<code>ap</code> holds” as follows:</p>
@@ -218,7 +232,7 @@
 <span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">True</span></span>
 <span id="cb19-4"><a href="#cb19-4" aria-hidden="true" tabindex="-1"></a>  <span class="op">&gt;</span> [<span class="dt">A</span>] <span class="op">|=</span> atom <span class="dt">B</span></span>
 <span id="cb19-5"><a href="#cb19-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">False</span></span>
-<span id="cb19-6"><a href="#cb19-6" aria-hidden="true" tabindex="-1"></a>  <span class="op">&gt;</span> [<span class="dt">A</span>] <span class="op">|=</span> <span class="fu">not</span> (atom <span class="dt">B</span>)</span>
+<span id="cb19-6"><a href="#cb19-6" aria-hidden="true" tabindex="-1"></a>  <span class="op">&gt;</span> [<span class="dt">A</span>] <span class="op">|=</span> pnot (atom <span class="dt">B</span>)</span>
 <span id="cb19-7"><a href="#cb19-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">True</span></span>
 <span id="cb19-8"><a href="#cb19-8" aria-hidden="true" tabindex="-1"></a>  <span class="op">&gt;</span> [<span class="dt">A</span>] <span class="op">|=</span> atom <span class="dt">A</span> <span class="op">.&amp;</span> atom <span class="dt">B</span></span>
 <span id="cb19-9"><a href="#cb19-9" aria-hidden="true" tabindex="-1"></a>  <span class="dt">False</span></span>
@@ -252,17 +266,25 @@
 <span id="cb21-7"><a href="#cb21-7" aria-hidden="true" tabindex="-1"></a>  <span class="kw">in</span> find (\(s,_) <span class="ot">-&gt;</span> tsLabel ts s <span class="op">|=</span> pnot p) rs</span></code></pre></div>
 <h2 id="checking-a-traffic-light-invariant">Checking a traffic light invariant</h2>
 <p>Let’s check an invariant of our traffic light system – that the light is never red and green at the same time. It’s not a very interesting invariant, but it’s a good one for any traffic light to have.</p>
-<p>We can use our <code>checkInvariant</code> function to check that this invariant holds:</p>
 <div class="sourceCode" id="cb22"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a>  <span class="op">&gt;</span> checkInvariant (pnot (atom <span class="dt">Red</span> <span class="op">.&amp;</span> atom <span class="dt">Green</span>)) traffic_light</span>
 <span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">Nothing</span></span></code></pre></div>
 <p>The result <code>Nothing</code> means there were no counterexamples, which means our invariant holds! Let’s try it with an invariant that doesn’t hold:</p>
 <div class="sourceCode" id="cb23"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a>  <span class="op">&gt;</span> checkInvariant (pnot (atom <span class="dt">Yellow</span>)) traffic_light</span>
 <span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">Just</span> (<span class="dt">Yellow</span>,<span class="dt">Path</span> {pathHead <span class="ot">=</span> <span class="dt">Red</span>, pathTail <span class="ot">=</span> [(<span class="dt">Change</span>,<span class="dt">Green</span>),(<span class="dt">Change</span>,<span class="dt">Yellow</span>)]})</span></code></pre></div>
-<p>Our invariant checking algorithm was able to find a path to a state that violated <code>pnot (atom Yellow)</code>; unsurprisingly, the bad state was <code>Yellow</code> (the last state in the counterexample path). Because <code>Yellow</code> is reachable in our transition system, this property doesn’t hold. What if, however, <code>Yellow</code> is not reachable?</p>
-<div class="sourceCode" id="cb24"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a>  <span class="op">&gt;</span> traffic_light <span class="ot">=</span> <span class="dt">TransitionSystem</span> [<span class="dt">Red</span>] (<span class="op">:</span>[]) (\s <span class="ot">-&gt;</span> <span class="kw">case</span> s <span class="kw">of</span> <span class="dt">Red</span> <span class="ot">-&gt;</span> [(<span class="dt">Change</span>, <span class="dt">Green</span>)]; <span class="dt">Green</span> <span class="ot">-&gt;</span> [(<span class="dt">Change</span>, <span class="dt">Red</span>)]; <span class="dt">Yellow</span> <span class="ot">-&gt;</span> [(<span class="dt">Change</span>, <span class="dt">Red</span>)])</span>
-<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a>  <span class="op">&gt;</span> checkInvariant (pnot (atom <span class="dt">Yellow</span>)) traffic_light</span>
-<span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">Nothing</span></span></code></pre></div>
-<h1 id="conclusion">Conclusion</h1>
-<p>Hopefully, this first post gave you a taste of what model checking is all about. In the next post, we’ll talk about how to convert higher-level programs into transition systems, we’ll explore some more interesting examples.</p>
+<p>Our invariant checking algorithm was able to find a path to a state that violated <code>pnot (atom Yellow)</code>; unsurprisingly, the bad state was <code>Yellow</code>. Because <code>Yellow</code> is reachable in our transition system, this property doesn’t hold. What if, however, <code>Yellow</code> is not reachable – for instance, in a simpler traffic light that goes directly from <code>Green</code> to <code>Red</code>?</p>
+<div class="sourceCode" id="cb24"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="ot">simple_traffic_light ::</span> <span class="dt">TransitionSystem</span> <span class="dt">Color</span> <span class="dt">Change</span> <span class="dt">Color</span></span>
+<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a>simple_traffic_light <span class="ot">=</span> <span class="dt">TransitionSystem</span></span>
+<span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a>  { tsInitialStates <span class="ot">=</span> [<span class="dt">Red</span>]</span>
+<span id="cb24-4"><a href="#cb24-4" aria-hidden="true" tabindex="-1"></a>  , tsLabel <span class="ot">=</span> \s <span class="ot">-&gt;</span> [s]</span>
+<span id="cb24-5"><a href="#cb24-5" aria-hidden="true" tabindex="-1"></a>  , tsTransitions <span class="ot">=</span> \s <span class="ot">-&gt;</span> <span class="kw">case</span> s <span class="kw">of</span></span>
+<span id="cb24-6"><a href="#cb24-6" aria-hidden="true" tabindex="-1"></a>      <span class="dt">Red</span>   <span class="ot">-&gt;</span> [(<span class="dt">Change</span>, <span class="dt">Green</span>)]</span>
+<span id="cb24-7"><a href="#cb24-7" aria-hidden="true" tabindex="-1"></a>      <span class="dt">Green</span> <span class="ot">-&gt;</span> [(<span class="dt">Change</span>, <span class="dt">Red</span>  )]</span>
+<span id="cb24-8"><a href="#cb24-8" aria-hidden="true" tabindex="-1"></a>  }</span></code></pre></div>
+<p>If we check <code>pnot (atom Yellow)</code>, we will find that the property holds, because <code>Yellow</code> isn’t reachable:</p>
+<div class="sourceCode" id="cb25"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a>  <span class="op">&gt;</span> checkInvariant (pnot (atom <span class="dt">Yellow</span>)) simple_traffic_light</span>
+<span id="cb25-2"><a href="#cb25-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">Nothing</span></span></code></pre></div>
+<h1 id="whats-next">What’s next?</h1>
+<p>This post describes the basic idea of model checking: represent the system you’d like to verify as a directed graph, and search the graph to make sure the desired property holds. The system we studied was simple enough to be pedagogically useful, but might be too trivial to illustrate the power of the technique. Furthermore, the property we verified was also extremely simple.</p>
+<p>In the next post, we’ll discuss a technique for converting imperative computer programs into transition systems, and we will use this technique to verify a non-trivial invariant about a non-trivial program. In the post after that, we’ll discuss how to state and verify more interesting properties, like “every red light is immediately preceded by a yellow light.”</p>
 </body>
 </html>

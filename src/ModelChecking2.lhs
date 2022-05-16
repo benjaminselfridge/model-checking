@@ -28,9 +28,9 @@ The *state* of a program is a mapping from variables to values.
 
 > type State var val = Map var val
 
-A *state condition* is a predicate over the `State`.
+A *state predicate* is a predicate over the `State`.
 
-> type StatePredicate var val = State var val -> Bool
+> type StatePredicate var val = Predicate (State var val)
 
 An *effect* is a state transformation, which modifies the state in some way.
 
@@ -50,11 +50,12 @@ of the transitions to an `Effect` that modifies the state.
 The `action` type is a name for each effect, and the `pgEffect` field maps each
 action to its corresponding `Effect`.
 
-Predicates and effects
+State predicates and effects
 --
 
 Let's introduce a few functions that will make the process of defining a program
-graph a bit easier. First, we define some common state predicates:
+graph a bit easier. The following functions are convenient for defining state
+predicates:
 
 > unconditionally :: StatePredicate var val
 > unconditionally = const True
@@ -71,7 +72,13 @@ graph a bit easier. First, we define some common state predicates:
 > (var !< val) state = state ! var < val
 > infix 4 !<
 
-And the following operators are convenient for constructing effects:
+The operators `!==`, `!>`, and `!<` are read "must be equal to", "must be
+greater than", and "must be less than", respectively. Note that because each
+`StatePredicate` is also a `Predicate`, we can use the lifted boolean operators
+`.&`, `.|`, `pnot`, and `.->` defined in the previous post to combine them:
+
+Next, we define some convenient operators for modifying the state of the
+program:
 
 > (=:) :: Ord var => var -> val -> Effect var val
 > (=:) = insert
@@ -223,47 +230,46 @@ satisfied by `state`.
 >       , guard state ]
 >   }
 
-We can use this conversion function to check properties of our soda machine
-program.
-
 Checking soda machine invariants
--- 
+--
 
-One property we would like our soda machine to have is that the number of coins
-is consistent with the current number of sodas and beers in the machine. In
-particular, we would like to know that the number of coins, the number of sodas,
-and the number of beers all add up to a constant number: `max_sodas +
-max_beers`.
+We can use this conversion function to check properties of our soda machine
+program. Below is a picture of the transition system for the soda machine with a
+`max_sodas = 2` and `max_beers = 1`:
+
+![Transitition system for a soda machine](../images/soda_machine.png)
+
+One property we would like our soda machine
+to have is that the number of coins is consistent with the current number of
+sodas and beers in the machine. In particular, we would like to know that the
+number of coins, the number of sodas, and the number of beers all add up to a
+constant number: `max_sodas + max_beers`.
 
 > data SodaMachineProposition = Consistent
 >   deriving (Show, Eq, Ord)
 
-> smPropToPred :: Int -> Int -> SodaMachineProposition
->              -> StatePredicate SodaMachineVar Int
-> smPropToPred max_sodas max_beers Consistent state =
->   state ! NumCoins + state ! NumSodas + state ! NumBeers ==
->   max_sodas + max_beers
+> soda_machine_ts :: Int -> Int
+>                 -> TransitionSystem (SodaMachineLoc, State SodaMachineVar Int) SodaMachineAction (PGProp SodaMachineLoc SodaMachineProposition)
+> soda_machine_ts max_sodas max_beers =
+>   pgToTS (soda_machine max_sodas max_beers) [Consistent] toPred
+>   where toPred Consistent state =
+>           state ! NumCoins + state ! NumSodas + state ! NumBeers ==
+>           max_sodas + max_beers
 
 Let's check this property of our soda machine in ghci! We'll use a maximum
 capacity of `2` for both soda and beer:
 
 ```{.haskell}
-  > checkInvariant (soda_machine_invariant_1 2 2) (pgToTS (soda_machine 2 2))
-  Just [(Start,fromList [(NumCoins,0),(NumSodas,2),(NumBeers,2)]),(Select,fromList [(NumCoins,1),(NumSodas,2),(NumBeers,2)])]
+  > checkInvariant (atom (PGStateProp Consistent)) (soda_machine_ts 2 2)
+  Just ((Select,fromList [(NumCoins,1),(NumSodas,2),(NumBeers,2)]),Path {pathHead = (Start,fromList [(NumCoins,0),(NumSodas,2),(NumBeers,2)]), pathTail = [(InsertCoin,(Select,fromList [(NumCoins,1),(NumSodas,2),(NumBeers,2)]))]})
 ```
 
 Aha! Our stated property actually doesn't hold. Immediately after the customer
 inserts a coin, the system is in an inconsistent state. We can fix this by
 restricting the invariant so it only applies when we are in the `Start` state:
 
-> -- soda_machine_invariant_2 :: Int -> Int -> Proposition (Either SodaMachineLoc (StatePredicate SodaMachineVar Int))
-> -- soda_machine_invariant_2 max_sodas max_beers =
-> --   atom (Left Start) .-> soda_machine_invariant_1 max_sodas max_beers
-
-Now, let's check this new version:
-
 ```{.haskell}
-  > checkInvariant (soda_machine_invariant_2 2 2) (pgToTS (soda_machine 2 2))
+  > checkInvariant (atom (PGInLoc Start) .-> atom (PGStateProp Consistent)) (soda_machine_ts 2 2)
   Nothing
 ```
 

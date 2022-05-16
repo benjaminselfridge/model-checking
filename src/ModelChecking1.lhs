@@ -3,7 +3,8 @@ Recently, I've been reading a
 and watching a [lecture
 series](https://www.youtube.com/watch?v=Y5Hg4MvUXc4&list=PLwabKnOFhE38C0o6z_bhlF_uOUlblDTjh)
 about model checking. This is a topic I've learned a bit about in the past, but
-never really studied in earnest.
+never really studied in earnest. I highly recommend these resources to anyone
+who is interested in learning more.
 
 In model checking, we create a *model* of some sort of stateful artifact, like a
 computer program, sequential circuit, or even something in the "real world"
@@ -14,12 +15,75 @@ whether this property holds for the model, using a variety of nifty algorithms.
 This series of blog posts constitutes a straightforward introduction to model
 checking, using Haskell code to express the ideas and implement the algorithms.
 The intended audience is anyone who knows a bit of Haskell, and who wants to
-understand what model checking is all about.
+understand how model checking works.
 
 This post was generated with `pandoc` from a [literate haskell
 document](https://github.com/benjaminselfridge/model-checking/blob/master/src/ModelChecking1.lhs).
 
-Overview
+What is model checking?
+==
+
+Modern physical and digital systems can be incredibly complex. They are often
+composed of multiple interacting subsystems, each with its own internal state.
+It can become extremely hard to reason about the correctness of these systems,
+because the details of exactly how and when the system changes state may be
+subtle.
+
+There is only one way to get hard guarantees about a complex system: by using
+*mathematical rigor* to describe the system in question, to specify the desired
+property, and to prove or disprove that the system satisfies the property. This
+can be done entirely manually (i.e. constructing a proof or counterexample by
+hand), or with the help of some degree of tool automation. Typically, the more
+automation a technique offers, the more limited it is in other aspects (for
+instance, in the size of the models that can be verified). Hand proofs,
+automated theorem proving, abstract interpretation, SAT/SMT solving, BDDs, and
+model checking are all examples of formal methods techniques, and each of these
+techniques occupies its own special compromise point in the design space.
+
+Model checking is at the "high automation/limited scalability" end of this
+spectrum. Model checking is extremely powerful because it is a push-button
+process. Once you specify your model and the property you want to check, the
+computer does the rest. However, the method is fundamentally limited by the
+"state-explosion" problem. Model checking involves an exhaustive search of the
+entire state space of a system, and if this space is too big, verification
+becomes infeasible. Model checking has had most of its success in the hardware
+domain, where state and control logic are much smaller and simpler than in a
+typical piece of software. It is a good method to use for *finding bugs* because
+it's great at producing small counterexamples, if they exist.
+
+In practice, model checking consists of three basic steps:
+
+1) Capture the essence of the system you want to verify by constructing a
+*model* of this system, using a formal language that a model checking tool can
+understand.
+
+2) Capture the property you want to verify about your model in a property
+specification language (usually this is the same language in which the model is
+described).
+
+3) Press "go", and wait for the tool to either a) declare that the property
+holds for your model, b) provide a counterexample, or c) give up.
+
+The basic idea of model checking is simple: represent all possible states of
+your system as nodes in a directed graph, and represent the possible changes
+from state to state as directed edges from one node to another. Then, checking a
+property of your system boils down to running some sort of search algorithm on
+the graph. This graph-based representation is called a *transition system*.
+
+The goal of this first post is to introduce the notion of a transition system,
+and to show how we can verify a simple type of property called an *invariant*.
+The example used throughout this post (a traffic light with three states) is a
+pedagogical one, and it's very trivial. The point in this first post is not to
+show you the full power of model checking all at once; it's to set up a
+conceptual framework that we can build on in subsequent posts.
+
+Each post will build on the previous one, and we will gradually move from simple
+systems and properties to more complex and meaningful ones. By the final post in
+this series, we will have developed a full-blown model checker in Haskell, and
+we will use it to verify some non-trivial properties about a cache coherence
+protocol.
+
+Transition systems
 ==
 
 > module ModelChecking1 where
@@ -27,16 +91,8 @@ Overview
 > import Data.List (find)
 > import System.Random (RandomGen, randomR)
 
-In this post, we will introduce transition systems, and we will state simple
-properties about them, called *invariants*. We will also implement a simple
-model checking algorithm, whose aim is to check that an invariant holds for all
-reachable states of the system.
-
-Transition systems
-==
-
 A *transition system* over state set `s`, action set `action`, and atomic
-propositions `ap` is defined as follows:
+propositional variables `ap` is defined as follows:
 
 > data TransitionSystem s action ap = TransitionSystem
 >   { tsInitialStates :: [s]
@@ -44,20 +100,33 @@ propositions `ap` is defined as follows:
 >   , tsTransitions   :: s -> [(action, s)]
 >   }
 
-The intuition behind each of the three fields of a transition system `ts` is as
-follows:
+The type `s` represents all possible states our system can be in; if the system
+is a traffic light, `s` might be the set of colors `{red, green, yellow}`; if
+it's a sequential circuit, it might be the current value of a set of bits.
+
+The type `ap` represents the relevant properties of a given state. Depending on
+what property we are interested in for our system, we might choose a
+corresponding set of variables `ap` that help us to capture the property using
+propositional logic. Each element of `ap` is a boolean-valued variable, and
+depending on which state the system is in, each such variable may be either true
+or false. The `tsLabel` function tells us the *true-set* of each state. The
+*true-set* is simply the set of variables which are true in a given state. If a
+variable is in this list, then it's true; if it's absent from the list, it's
+false.
+
+The type `action` is simply a "name" for each outgoing transition. These names
+do not carry any semantic content, but it's often useful to give a name to a
+transition to indicate "what is happening" as the system changes from state to
+another.
+
+In summary, here is the intution behind each of the three fields of a transition
+system.
 
 * `tsInitialStates ts`: "the states that the system can start in"
 * `tsLabel ts s`: "the set of variables which are true in state `s`"
 * `tsTransitions ts s`: "all of `s`'s outgoing transitions"
 
-We interpret the label of a state `tsLabel ts s :: [ap]` as a *true-set*, or the
-set of all variables `ap` which are true in state `s`.
-
-The label of a state is an abstraction of the "internal data" of that state, and
-the transitions are an abstraction of control flow. Here, a transition is a pair
-`(action, s')` where `s'` is the destination state of the transition, and
-`action` is a name for the transition.
+Let's look at a trivial example of a transition system.
 
 Example: Traffic light
 --
@@ -70,12 +139,20 @@ and green:
 
 > data Color = Red | Yellow | Green deriving (Show, Eq, Ord)
 
+The atomic propositional variables `ap` that we will use is also `Color`. The
+idea is that a color is `True` in a given state if and only if that color is
+currently lit up. In this example, states and atomic propositional variables are
+one and the same; however, this will not always be the case, and when we study
+more interesting examples, we will use a much richer set of atomic propositional
+variables.
+
 There will only be one action:
 
 > data Change = Change deriving (Show, Eq, Ord)
 
 Our set of transitions will allow `Red` to transition to `Green`, `Green` to
-`Yellow`, and `Yellow` to `Red`:
+`Yellow`, and `Yellow` to `Red`. Below is the definition of the traffic light's
+transition system:
 
 > traffic_light :: TransitionSystem Color Change Color
 > traffic_light = TransitionSystem
@@ -87,9 +164,9 @@ Our set of transitions will allow `Red` to transition to `Green`, `Green` to
 >       Yellow -> [(Change, Red   )]
 >   }
 
-Notice that we reuse our state type `Color` as our set of atomic propositions.
-The label of each state `s` is `[s]`: the only color that is "true" in state `s`
-is `s` itself.
+Notice that in each state `s`, where `s` is one of the colors `Red`, `Yellow`,
+or `Green`, the label of `s` is simply `[s]`, because the only color that is lit
+up in state `s` is `s` itself.
 
 Running a transition system
 --
@@ -149,13 +226,6 @@ A *predicate* is any function that maps a value to a boolean:
 
 > type Predicate a = a -> Bool
 
-When working with predicates, the following "flipped application" operator is
-useful:
-
-> (|=) :: a -> Predicate a -> Bool
-> a |= p = p a
-> infix 0 |=
-
 A very simple example of a predicate is `true`, which holds for all inputs:
 
 > true :: Predicate a
@@ -183,6 +253,13 @@ We can "lift" the usual boolean operators to work with predicates:
 > (p .-> q) a = if p a then q a else True
 > infixr 1 .->
 
+When working with predicates, the following "flipped application" operator is
+often useful:
+
+> (|=) :: a -> Predicate a -> Bool
+> a |= p = p a
+> infix 0 |=
+
 A *proposition* over a set of atomic propositional variables `ap` is a predicate
 over true-sets of `ap`:
 
@@ -202,7 +279,7 @@ Let's play with propositions a bit in ghci to get a feel:
   True
   > [A] |= atom B
   False
-  > [A] |= not (atom B)
+  > [A] |= pnot (atom B)
   True
   > [A] |= atom A .& atom B
   False
@@ -263,8 +340,6 @@ Let's check an invariant of our traffic light system -- that the light is never
 red and green at the same time. It's not a very interesting invariant, but it's
 a good one for any traffic light to have.
 
-We can use our `checkInvariant` function to check that this invariant holds:
-
 ``` {.haskell}
   > checkInvariant (pnot (atom Red .& atom Green)) traffic_light
   Nothing
@@ -279,20 +354,39 @@ invariant holds! Let's try it with an invariant that doesn't hold:
 ```
 
 Our invariant checking algorithm was able to find a path to a state that
-violated `pnot (atom Yellow)`; unsurprisingly, the bad state was `Yellow` (the
-last state in the counterexample path). Because `Yellow` is reachable in our
-transition system, this property doesn't hold. What if, however, `Yellow` is not
-reachable?
+violated `pnot (atom Yellow)`; unsurprisingly, the bad state was `Yellow`.
+Because `Yellow` is reachable in our transition system, this property doesn't
+hold. What if, however, `Yellow` is not reachable -- for instance, in a simpler
+traffic light that goes directly from `Green` to `Red`?
+
+> simple_traffic_light :: TransitionSystem Color Change Color
+> simple_traffic_light = TransitionSystem
+>   { tsInitialStates = [Red]
+>   , tsLabel = \s -> [s]
+>   , tsTransitions = \s -> case s of
+>       Red   -> [(Change, Green)]
+>       Green -> [(Change, Red  )]
+>   }
+
+If we check `pnot (atom Yellow)`, we will find that the property holds, because
+`Yellow` isn't reachable:
 
 ``` {.haskell}
-  > traffic_light = TransitionSystem [Red] (:[]) (\s -> case s of Red -> [(Change, Green)]; Green -> [(Change, Red)]; Yellow -> [(Change, Red)])
-  > checkInvariant (pnot (atom Yellow)) traffic_light
+  > checkInvariant (pnot (atom Yellow)) simple_traffic_light
   Nothing
 ```
 
-Conclusion
+What's next?
 ==
 
-Hopefully, this first post gave you a taste of what model checking is all about.
-In the next post, we'll talk about how to convert higher-level programs into
-transition systems, and we'll explore some more interesting examples.
+This post describes the basic idea of model checking: represent the system you'd
+like to verify as a directed graph, and search the graph to make sure the
+desired property holds. The system we studied was simple enough to be
+pedagogically useful, but might be too trivial to illustrate the power of the
+technique. Furthermore, the property we verified was also extremely simple.
+
+In the next post, we'll discuss a technique for converting imperative computer
+programs into transition systems, and we will use this technique to verify a
+non-trivial invariant about a non-trivial program. In the post after that, we'll
+discuss how to state and verify more interesting properties, like "every red
+light is immediately preceded by a yellow light."
