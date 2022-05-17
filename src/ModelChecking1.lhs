@@ -14,8 +14,8 @@ whether this property holds for the model, using a variety of nifty algorithms.
 
 This series of blog posts constitutes a straightforward introduction to model
 checking, using Haskell code to express the ideas and implement the algorithms.
-The intended audience is anyone who knows a bit of Haskell, and who wants to
-understand how model checking works.
+The intended audience is anyone who knows a bit of Haskell and a bit of logic,
+and who wants to understand how model checking works.
 
 This post was generated with `pandoc` from a [literate haskell
 document](https://github.com/benjaminselfridge/model-checking/blob/master/src/ModelChecking1.lhs).
@@ -219,12 +219,64 @@ is the only run we will ever get. In subsequent posts, we'll look at
 nondeterministic transition systems which will return different runs with
 different random generators.
 
-Predicates and propositions
+Checking invariants
 ==
 
-A *predicate* is any function that maps a value to a boolean:
+Given a state `s` of a transition system `ts`, we can ask which atomic
+propositional variables hold in `s`; that is, given a particular variable `p ::
+ap`, we can determine whether `p` is true in `s` via
+
+```haskell
+p `elem` tsLabel ts s
+```
+
+If the result of this call is `True`, then `p` is `True` in state `s`; if it is
+`False`, then `p` is `False` in state `s`.
+
+We can generalize this from atomic propositional variables to all
+*propositions*, which are logical formulas stated "in terms of" the variables
+`ap`, using boolean connectives (and, or, implies, not) to build larger formulas
+out of smaller ones. In this section, will define a `Proposition` in Haskell to
+be any function that maps true-sets to `Bool`s. Since the label of every state in
+a transition system is its true-set, we can therefore ask, for each individual
+state, whether a given proposition is true when evaluated at the label of that
+state -- that is, whether the state *satisfies* the proposition.
+
+We can take this one step further and ask whether a proposition is satisfied by
+*every* reachable state of a transition system. If this is true for a given
+proposition, that proposition is said to be an *invariant* of the system. In
+order to determine whether a given proposition is an invariant, we simply search
+the transition system's underlying graph, evaluating the proposition at every
+state label we reach; if any of the labels do not satisfy the proposition, then
+it is not an invariant.
+
+This section will introduce the definition of a `Proposition`, and will define a
+simple depth-first search function over a transition system that checks whether
+a given proposition holds for all reachable states of the system. We will then
+apply this function to our traffic light system to check that a very simple
+invariant holds.
+
+Predicates
+--
+
+In this section, we'll introduce the general notion of a *predicate*, which we
+will use in this post and in every subsequent post. We will see that a
+*proposition* is a special type of predicate.
+
+A *predicate* is any single-argument function that returns a `Bool`:
 
 > type Predicate a = a -> Bool
+
+Predicates are a fundamental building block for many of the most commonly used
+functions in Haskell:
+
+```haskell
+even   :: Integral a => Predicate a
+null   :: Foldable t => Predicate (t a)
+and    :: Foldable t => Predicate (t Bool)
+all    :: Foldable t => Predicate a -> Predicate (t a)
+filter :: Predicate a -> [a] -> [a]
+```
 
 A very simple example of a predicate is `true`, which holds for all inputs:
 
@@ -236,7 +288,7 @@ Similarly, `false` holds for no inputs:
 > false :: Predicate a
 > false _ = False
 
-We can "lift" the usual boolean operators to work with predicates:
+We can "lift" all of the usual boolean operators to work with predicates:
 
 > (.&) :: Predicate a -> Predicate a -> Predicate a
 > (p .& q) a = p a && q a
@@ -253,25 +305,55 @@ We can "lift" the usual boolean operators to work with predicates:
 > (p .-> q) a = if p a then q a else True
 > infixr 1 .->
 
+These operators (called *boolean connectives*) are useful for building larger
+predicates out of smaller ones:
+
+```haskell
+  > divisible_by_3 a = a `mod` 3 == 0
+  > divisible_by_6 = even .& divisible_by_3
+  > map divisible_by_6 [0..12]
+  [True,False,False,False,False,False,True,False,False,False,False,False,True]
+```
+
 When working with predicates, the following "flipped application" operator is
-often useful:
+useful:
 
 > (|=) :: a -> Predicate a -> Bool
 > a |= p = p a
 > infix 0 |=
 
-A *proposition* over a set of atomic propositional variables `ap` is a predicate
-over true-sets of `ap`:
+Given some object `a`, and some predicate `p :: Predicate a`, we read the
+statement `a |= p` as "`a` satisfies `p`".
+
+```haskell
+  > 5 |= divisible_by_6     -- Does 5 satisfy divisible_by_6?
+  False
+  > [2, 10, 24] |= all even -- Does [2, 10, 24] satisfy all even?
+  True
+```
+
+This flipped application syntax may seem weird, but reading `|=` as "satisfies"
+should help.
+
+Propositions
+--
+
+We define a *proposition* over the atomic propositions `ap` to be a predicate
+over `[ap]`:
 
 > type Proposition ap = Predicate [ap]
 
-Given an atomic propositional variable `ap`, we can form the proposition "`ap`
-holds" as follows:
+In this context, a list `aps :: [ap]` is thought of as "the set of all atomic
+propositions which are true." Given a single atomic proposition `p`, we can form
+the proposition "`p` holds" as follows:
 
 > atom :: Eq ap => ap -> Proposition ap
-> atom ap aps = ap `elem` aps
+> atom p aps = p `elem` aps
 
-Let's play with propositions a bit in ghci to get a feel:
+Using the `atom` function, along with our boolean connectives `.&`, `.|`, `.->`,
+and `pnot`, we can "build up" propositional formulas from atomic propositions,
+and we can then ask whether the resulting formula is satisfied by a particular
+true-set. Let's mess around a bit in ghci to get a feel for how this works:
 
 ```haskell
   > data AB = A | B deriving (Show, Eq)
@@ -291,23 +373,50 @@ Let's play with propositions a bit in ghci to get a feel:
   True
 ```
 
-Checking invariants
-==
+Recall that our states are labeled by *true-sets*:
 
-Given a transition system `ts` and a proposition `p` over `ts`'s atomic
-propositional variables, we can ask: "Does `p` hold at all reachable states in
+```haskell
+tsLabel :: TransitionSystem s action ap -> s -> [ap]
+```
+
+Therefore, given a proposition `f :: Proposition ap`, which is just a function
+`f :: [ap] -> Bool`, we can ask whether a particular state `s` of our transition
+system satisfies `f` like so:
+
+```haskell
+tsLabel ts s |= f
+```
+
+Let's try this out a bit with our traffic light system:
+
+```haskell
+  > tsLabel traffic_light Red -- which colors are "true" in state Red?
+  [Red]
+  > tsLabel traffic_light Red |= atom Red
+  True
+  > tsLabel traffic_light Red |= (atom Red .| atom Green)
+  True
+  > tsLabel traffic_light Red |= atom Red .-> atom Yellow
+  False
+  > tsLabel traffic_light Red |= atom Yellow .-> atom Green
+  True
+```
+
+Depth-first search
+--
+
+Given a transition system `ts` and a proposition `f` over `ts`'s atomic
+propositional variables, we can ask: "Does `f` hold at all reachable states in
 `ts`?" A proposition which is supposed to hold at all reachable states of a
 transition system is called an *invariant*.
 
 To check whether an invariant holds, we evaluate the proposition on each
 reachable state (more precisely, on the *label* of each reachable state). To do
-this, we first define a lazy depth-first search.
+this, we first define a lazy depth-first search to collect all the states.
 
-Depth-first search
---
-
-Our search algorithm produces each reachable state, along with the path
-traversed to reach that state.
+Our depth-first search algorithm produces each reachable state, along with the
+path traversed to reach that state. The path will be useful for giving
+informative counterexamples.
 
 > dfs :: Eq s => [s] -> (s -> [(action, s)]) -> [(s, Path s action)]
 > dfs starts transitions = (\p@(Path s tl) -> (s, reversePath p)) <$> loop [] (singletonPath <$> starts)
@@ -321,7 +430,8 @@ traversed to reach that state.
 The `checkInvariant` function
 --
 
-Now, to check an invariant, we simply collect all the reachable states via `dfs`
+Now, to check whether a proposition `f :: Proposition ap` is an invariant of a
+transition system, we simply collect all the system's reachable states via `dfs`
 and make sure the invariant holds for each of their labels, producing a path to
 a bad state if there is one:
 
@@ -329,9 +439,9 @@ a bad state if there is one:
 >                => Proposition ap
 >                -> TransitionSystem s action ap
 >                -> Maybe (s, Path s action)
-> checkInvariant p ts =
+> checkInvariant f ts =
 >   let rs = dfs (tsInitialStates ts) (tsTransitions ts)
->   in find (\(s,_) -> tsLabel ts s |= pnot p) rs
+>   in find (\(s,_) -> tsLabel ts s |= pnot f) rs
 
 Checking a traffic light invariant
 --
