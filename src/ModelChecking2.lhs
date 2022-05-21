@@ -1,3 +1,12 @@
+In the [previous post](ModelChecking1.html), we introduced transition systems,
+which are directed graphs that capture how the state of a system can evolve
+through time. Each state in the graph was labeled with a *true-set*, the set of
+all atomic propositions which are true in that state. We explored how to build
+logical propositions in terms of the atomic propositions of the state labels,
+and how to check that such a proposition is an *invariant* of the transition
+system. By using an off-the-shelf graph search algorithm, we discovered all
+reachable states and evaluated the proposition at each state.
+
 In this post, we'll talk about how to convert an imperative computer program
 into a transition system. We'll look at an example program, and show how to use
 this conversion routine to check interesting invariants about the program's
@@ -91,6 +100,10 @@ program:
 > (-=:) :: (Ord var, Num val) => var -> val -> Effect var val
 > var -=: val = adjust (subtract val) var
 > infix 2 -=:
+
+> (*=:) :: (Ord var, Num val) => var -> val -> Effect var val
+> var *=: val = adjust (*val) var
+> infix 2 *=:
 
 > reset :: State var val -> Effect var val
 > reset = const

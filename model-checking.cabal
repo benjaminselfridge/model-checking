@@ -25,6 +25,7 @@ library
     exposed-modules:  ModelChecking1
                       ModelChecking2
                       -- ModelChecking3
+                      Scratch
                       GraphViz
 
     -- Modules included in this library but not exported.
@@ -36,6 +37,7 @@ library
                       containers,
                       fgl,
                       graphviz,
-                      random
+                      random,
+                      vector
     hs-source-dirs:   src
     default-language: Haskell2010
