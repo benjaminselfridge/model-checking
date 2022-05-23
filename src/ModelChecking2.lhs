@@ -58,7 +58,7 @@ A command that *branches* needs to change the current line number. We'll use
 > type LineNumber = Int
 
 A statement in our language either modifies the current environment, or
-conditionally changes the current line number:
+conditionally goes to the given line number:
 
 > data Stmt var val = Modify (Effect var val)
 >                   | CondGoto (Predicate (Env var val)) LineNumber

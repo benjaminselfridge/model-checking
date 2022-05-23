@@ -75,7 +75,7 @@ type LineNumber = Int
 ```
 
 A statement in our language either modifies the current environment, or
-conditionally changes the current line number:
+conditionally goes to the given line number:
 
 ``` {.haskell .literate}
 data Stmt var val = Modify (Effect var val)
@@ -317,7 +317,7 @@ fact = Vec.fromList
           ]
 ```
 
-We don't have a separate `Halt` instruction, so we model that with a
+We don't have a separate `Halt` statement, so we model that with a
 `goto` statement that points to itself, infinitely looping.
 
 # From sequential programs to transition systems
