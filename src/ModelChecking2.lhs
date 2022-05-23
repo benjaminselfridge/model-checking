@@ -264,7 +264,7 @@ to the left of each command):
 >   {- 5 -} , goto 5 -- halt
 >           ]
 
-We don't have a separate `Halt` instruction, so we model that with a `goto`
+We don't have a separate `Halt` statement, so we model that with a `goto`
 statement that points to itself, infinitely looping.
 
 From sequential programs to transition systems
