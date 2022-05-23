@@ -215,8 +215,17 @@ The next will be the inequality operators:
 > (e1 .> e2) env = e1 env > e2 env
 > infix 4 .>
 
-This is all we're going to need for this post, but it's an easy enough language
-to extend whenever we need new effects or environment predicates.
+These are all the basic environment predicates we're going to need for this
+post, but it's an easy enough language to extend whenever we need new effects or
+environment predicates. Also note that we can combine predicates using the
+boolean operators `.&`, `.|`, `pnot`, and `.->` as defined in the previous post;
+these enable us to "build up" larger predicates out of smaller ones:
+
+```haskell
+  > :t (val 1 .<= var X) .& (var X .<= var Y)
+  (val 1 .<= var X) .& (var X .<= var Y)
+  :: (Ord val, Num val) => Predicate (Env XY val)
+```
 
 An example (sequential) program
 --

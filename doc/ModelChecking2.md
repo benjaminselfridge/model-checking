@@ -134,12 +134,12 @@ that simply looks up the variable in the environment.
 
 ``` {.haskell .literate}
 var :: Ord var => var -> Expr var val
-var x state = state Map.! x
+var x env = env Map.! x
 ```
 
 If `c :: val` is a constant value, we can use `c` as an expression. In
 our representation, the *expression* `c` will be a function that ignores
-the current state and returns the value `c`.
+the current environment and returns the value `c`.
 
 ``` {.haskell .literate}
 val :: val -> Expr var val
@@ -151,19 +151,19 @@ operators:
 
 ``` {.haskell .literate}
 (.+) :: Num val => Expr var val -> Expr var val -> Expr var val
-(e1 .+ e2) state = e1 state + e2 state
+(e1 .+ e2) env = e1 env + e2 env
 infixl 6 .+
 ```
 
 ``` {.haskell .literate}
 (.-) :: Num val => Expr var val -> Expr var val -> Expr var val
-(e1 .- e2) state = e1 state - e2 state
+(e1 .- e2) env = e1 env - e2 env
 infixl 6 .-
 ```
 
 ``` {.haskell .literate}
 (.*) :: Num val => Expr var val -> Expr var val -> Expr var val
-(e1 .* e2) state = e1 state * e2 state
+(e1 .* e2) env = e1 env * e2 env
 infixl 7 .*
 ```
 
@@ -264,9 +264,18 @@ infix 4 .>=
 infix 4 .>
 ```
 
-This is all we're going to need for this post, but it's an easy enough
-language to extend whenever we need new effects or environment
-predicates.
+These are all the basic environment predicates we're going to need for
+this post, but it's an easy enough language to extend whenever we need
+new effects or environment predicates. Also note that we can combine
+predicates using the boolean operators `.&`, `.|`, `pnot`, and `.->` as
+defined in the previous post; these enable us to "build up" larger
+predicates out of smaller ones:
+
+``` {.haskell}
+  > :t (val 1 .<= var X) .& (var X .<= var Y)
+  (val 1 .<= var X) .& (var X .<= var Y)
+  :: (Ord val, Num val) => Predicate (Env XY val)
+```
 
 ## An example (sequential) program
 
