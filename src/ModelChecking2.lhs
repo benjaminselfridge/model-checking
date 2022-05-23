@@ -84,7 +84,7 @@ Building effects
 --
 
 In this section, we'll write a few helper functions to create `Effect`s; in the
-next one, we'll do the same for `Predicate`s. They will help us create
+next one, we'll do the same for `Predicate`s. This will help us create
 easy-to-read programs in our language.
 
 Recall that an *effect* is a function that modifies the global variable
