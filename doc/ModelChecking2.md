@@ -13,362 +13,374 @@ proposition is an *invariant* of the transition system. By using an
 off-the-shelf graph search algorithm, we discovered all reachable states
 and evaluated the proposition at each state.
 
-In this post, we'll talk about how to convert an imperative computer
-program into a transition system. We'll look at an example program, and
-show how to use this conversion routine to check interesting invariants
-about the program's behavior.
+In this post, we will take a look at how transition systems can be
+derived from computer programs. We will develop a very simple imperative
+programming language, and then we will write a function that converts
+programs written in this language to transition systems. We'll also look
+at a few examples of such programs, and we'll show how to apply our
+`checkInvariant` function from the previous post to these examples to
+check important properties.
 
-# Program Graphs
+# A simple imperative programming language
 
 ``` {.haskell .literate}
 module ModelChecking2 where
 
 import ModelChecking1
-import Data.Map.Strict (Map, (!), fromList, adjust, insert)
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
+import Data.Vector (Vector)
+import qualified Data.Vector as Vec
+import Data.Void
 ```
 
-Our first task will be to define a very simple imperative programming
-language. Our program representation will consist of a set of
-*locations*, which can be thought of (roughly) as a line of code in a
-language like C. With each such location, we associate a collection of
-*guarded transitions*. A guarded transition is a triple
-`(guard, action, loc)`, with the meaning: "If `guard` is true of the
-current global state, then modify the state by performing `action` and
-go to location `loc`." When a guard is satisified in a given state, the
-corresponding transition is said to be *enabled*. When multiple
-transitions are enabled, one of them is chosen nondeterministically.
+In this section, we'll define a simple, Turing-complete imperative
+language with variable assignments and conditional gotos. The language
+will be implemented as a *shallowly embedded domain-specific language
+(eDSL)* in Haskell; we won't be writing a lexer or parser, and we won't
+even be writing an expression or statement evaluator, because
+expressions and statements in our language constructs will *themselves*
+be functions which directly evaluate and modify (respectively) the
+underlying state.
 
-We will call this construction a *program graph*. To define it in
-Haskell, we first define a couple auxiliary notions.
+In our language, a program is a sequence of commands, each of which does
+one of the following two things:
 
-The *state* of a program is a mapping from variables to values.
+1.  Modify the global state
+2.  Test a condition; if it's true, go to the given line number
+
+The "global state" is just an assignment of values to a set of
+variables. It doesn't particularly matter what the variables and values
+are, so we'll abstract them with type variables `var` and `val`,
+respectively. Then, the *global state* is going to be a `Map` from
+`var`s to `val`s:
 
 ``` {.haskell .literate}
 type State var val = Map var val
 ```
 
-A *state predicate* is a predicate over the `State`.
-
-``` {.haskell .literate}
-type StatePredicate var val = Predicate (State var val)
-```
-
-An *effect* is a state transformation, which modifies the state in some
-way.
+A command that modifies the global state is represented as an *effect*,
+which is a function taking the old state to a new one:
 
 ``` {.haskell .literate}
 type Effect var val = State var val -> State var val
 ```
 
-Finally, a *program graph* is defined by a set of initial locations, an
-initial state, a set of guarded transitions, and an effect function,
-mapping each action of the transitions to an `Effect` that modifies the
-state.
+A command that *branches* needs to change the current line number. We'll
+use `Int` as a sensible type for our line numbers:
 
 ``` {.haskell .literate}
-data ProgramGraph loc action var val = ProgramGraph
-  { pgInitialLocations :: [loc]
-  , pgInitialState :: State var val
-  , pgTransitions :: loc -> [(StatePredicate var val, action, loc)]
-  , pgEffect :: action -> Effect var val
-  }
+type LineNumber = Int
 ```
 
-The `action` type is a name for each effect, and the `pgEffect` field
-maps each action to its corresponding `Effect`.
-
-## State predicates and effects
-
-Let's introduce a few functions that will make the process of defining a
-program graph a bit easier. The following functions are convenient for
-defining state predicates:
+A statement in our language either changes the current global state, or
+conditionally changes the current line number:
 
 ``` {.haskell .literate}
-unconditionally :: StatePredicate var val
-unconditionally = const True
+data Stmt var val = Modify (Effect var val)
+                  | CondGoto (Predicate (State var val)) LineNumber
 ```
+
+To execute a `Modify` statement, we simply apply the `Effect` to the
+current state, and then go to the next line in the program. To execute a
+`CondGoto` statement, we first test the `Predicate` against the current
+state: if the predicate evaluates to true, then we go to the
+`LineNumber` indicated; if it is not true, then we go to the next line
+in the program.
+
+We'll also need an unconditional `goto` statement. We'll define it as
+`CondGoto true`, where `true :: Predicate a` is the function that always
+returns `True`:
 
 ``` {.haskell .literate}
-(!==) :: (Ord var, Eq val) => var -> val -> StatePredicate var val
-(var !== val) state = state ! var == val
-infix 4 !==
+goto :: LineNumber -> Stmt var val
+goto lineNum = CondGoto true lineNum
 ```
+
+A program is just an array (here, a `Vector`) of statements:
 
 ``` {.haskell .literate}
-(!>) :: (Ord var, Ord val) => var -> val -> StatePredicate var val
-(var !> val) state = state ! var > val
-infix 4 !>
+type Prog var val = Vector (Stmt var val)
 ```
 
-``` {.haskell .literate}
-(!<) :: (Ord var, Ord val) => var -> val -> StatePredicate var val
-(var !< val) state = state ! var < val
-infix 4 !<
-```
+## Building effects
 
-The operators `!==`, `!>`, and `!<` are read "must be equal to", "must
-be greater than", and "must be less than", respectively. Note that
-because each `StatePredicate` is also a `Predicate`, we can use the
-lifted boolean operators `.&`, `.|`, `pnot`, and `.->` defined in the
-previous post to combine them:
+In this section, we'll write a few helper functions to create `Effect`s;
+in the next one, we'll do the same for `Predicate`s. They will help us
+create easy-to-read programs in our language.
 
-Next, we define some convenient operators for modifying the state of the
-program:
-
-``` {.haskell .literate}
-(=:) :: Ord var => var -> val -> Effect var val
-(=:) = insert
-infix 2 =:
-```
-
-``` {.haskell .literate}
-(+=:) :: (Ord var, Num val) => var -> val -> Effect var val
-var +=: val = adjust (+val) var
-infix 2 +=:
-```
-
-``` {.haskell .literate}
-(-=:) :: (Ord var, Num val) => var -> val -> Effect var val
-var -=: val = adjust (subtract val) var
-infix 2 -=:
-```
-
-``` {.haskell .literate}
-(*=:) :: (Ord var, Num val) => var -> val -> Effect var val
-var *=: val = adjust (*val) var
-infix 2 *=:
-```
-
-``` {.haskell .literate}
-reset :: State var val -> Effect var val
-reset = const
-```
-
-## Example: Soda Machine
-
-Let's write a program that simulates a soda machine. The machine
-contains two types of drinks: soda, and beer. Each of them costs a
-single coin.
-
-There are three variables in our program: the number of coins in the
-machine, the number of sodas in the machine, and the number of beers in
-the machine. We have two locations in our program: `Start` and `Select`.
-In `Start`, the machine is idle, waiting for a customer to insert a
-coin, or for a technician to collect the coins and refill the beverages.
-In `Select`, the customer has inserted a coin, and the machine can
-either dispense a soda or a beer. Alternatively, the customer may push
-the "Return Coin" button, and his coin is returned to him.
-
-Before defining the soda machine program graph, we first introduce a few
-functions that will make the process feel a bit more like writing
-imperative code. The following operators are convenient for constructing
-state conditions:
-
-Now, let's create a program graph representing the soda machine. First
-we will define our set of variables, locations, and actions:
-
-``` {.haskell .literate}
-data SodaMachineVar = NumCoins | NumSodas | NumBeers
-  deriving (Show, Eq, Ord)
-```
-
-``` {.haskell .literate}
-data SodaMachineLoc = Start | Select
-  deriving (Show, Eq, Ord)
-```
-
-``` {.haskell .literate}
-data SodaMachineAction = InsertCoin
-                       | GetBeer
-                       | GetSoda
-                       | ReturnCoin
-                       | ServiceMachine
-  deriving (Show, Eq, Ord)
-```
-
-Since all the variables are integer-valued, we can use `Int` as the
-value type for our program graph.
-
-``` {.haskell .literate}
-soda_machine :: Int -> Int -> ProgramGraph SodaMachineLoc SodaMachineAction SodaMachineVar Int
-soda_machine max_sodas max_beers =
-  let initial = fromList [ (NumCoins, 0)
-                         , (NumSodas, max_sodas)
-                         , (NumBeers, max_beers) ]
-  in ProgramGraph
-  { pgTransitions = \loc -> case loc of
-```
-
-The `Start` location has two outgoing guarded transitions. If the
-customer inserts a coin, we transition to the `Select` location and
-increment the number of coins in the machine. If the technician services
-the machine, we return the machine to the initial state, setting the
-number of coins to `0` and filling the beers and sodas to the maximum
-capacity.
-
-``` {.haskell .literate}
-      Start -> [ ( unconditionally, InsertCoin    , Select )
-               , ( unconditionally, ServiceMachine, Start  ) ]
-```
-
-In the `Select` location, the customer has already inserted a coin, and
-is selecting a drink. If the number of sodas is positive, then the
-customer can select a soda, at which point the number of sodas is
-decremented and the machine goes to location `Start`. The same holds for
-beer. Also, the user may press the "Return Coin" button after inserting
-a coin, at which point the machine unconditionally returns the coin.
-
-``` {.haskell .literate}
-      Select -> [ ( NumSodas !> 0  , GetSoda   , Start )
-                , ( NumBeers !> 0  , GetBeer   , Start )
-                , ( unconditionally, ReturnCoin, Start ) ]
-```
-
-Now, for each action, we define the effect it has on the program state:
-
-``` {.haskell .literate}
-  , pgEffect = \action -> case action of
-      InsertCoin     -> NumCoins +=: 1
-      GetSoda        -> NumSodas -=: 1
-      GetBeer        -> NumBeers -=: 1
-      ReturnCoin     -> NumCoins -=: 1
-      ServiceMachine -> reset initial
-```
-
-The machine starts in location `Start`, and is initially full of both
-soda and beer.
-
-``` {.haskell .literate}
-  , pgInitialLocations = [Start]
-  , pgInitialState = initial
-  }
-```
-
-# Converting a Program Graph to a Transition System
-
-We'd like to check properties of imperative programs using the machinery
-developed in the previous post. First, though, we'll need to write a
-function that converts a program graph to a transition system.
-
-``` {.haskell .literate}
-data PGProp loc ap = PGInLoc loc | PGStateProp ap
-  deriving (Show, Eq, Ord)
-```
-
-``` {.haskell .literate}
-pgToTS :: Eq loc
-       => ProgramGraph loc action var val
-       -> [ap]
-       -> (ap -> StatePredicate var val)
-       -> TransitionSystem (loc, State var val) action (PGProp loc ap)
-```
-
-For a program graph with locations `loc`, variables `var`, and values
-`val`, the states of the corresponding transition system will be pairs
-`(loc, State var val)`. In other words, the state of the transition
-system has two parts: 1) where we are in the program (the `loc`ation),
-and 2) what the concrete `State`s of the global variables are.
-
-The set of atomic propositions will consist of which location we are
-currently in, as well as the set of all guards we could possibly define
-over the current state. This will allow us to state a very broad class
-of properties to check.
-
-Let's walk through the definition of `pgToTS`.
-
-``` {.haskell .literate}
-pgToTS pg aps toPred = TransitionSystem
-```
-
-The initial states of the transition system will be all pairs
-`(loc, state0)` where `l` is an initial location of the program graph,
-and `state0` is the initial state of the program graph.
-
-``` {.haskell .literate}
-  { tsInitialStates = [ (loc, pgInitialState pg)
-                      | loc <- pgInitialLocations pg ]
-```
-
-Each `(loc, state)` pair is is labeled with the proposition that is
-`True` for location `loc` and no other locations, and is also `True` for
-all state conditions that are satisfied by `state`.
-
-``` {.haskell .literate}
-  , tsLabel = \(loc, state) -> PGInLoc loc :
-                               [ PGStateProp ap | ap <- aps, toPred ap state ]
-```
-
-Given a state `(loc, state)` in our transition system, we have an
-outgoing transition for every transition in the program graph from `loc`
-whose guard is satisfied by `state`.
-
-``` {.haskell .literate}
-  , tsTransitions = \(loc, state) ->
-      [ (action, (loc', pgEffect pg action state))
-      | (guard, action, loc') <- pgTransitions pg loc
-      , guard state ]
-  }
-```
-
-## Checking soda machine invariants
-
-We can use this conversion function to check properties of our soda
-machine program. Below is a picture of the transition system for the
-soda machine with a `max_sodas = 2` and `max_beers = 1`:
-
-![Transitition system for a soda machine](../images/soda_machine.png)
-
-One property we would like our soda machine to have is that the number
-of coins is consistent with the current number of sodas and beers in the
-machine. In particular, we would like to know that the number of coins,
-the number of sodas, and the number of beers all add up to a constant
-number: `max_sodas + max_beers`.
-
-``` {.haskell .literate}
-data SodaMachineProposition = Consistent
-  deriving (Show, Eq, Ord)
-```
-
-``` {.haskell .literate}
-soda_machine_ts :: Int -> Int
-                -> TransitionSystem (SodaMachineLoc, State SodaMachineVar Int) SodaMachineAction (PGProp SodaMachineLoc SodaMachineProposition)
-soda_machine_ts max_sodas max_beers =
-  pgToTS (soda_machine max_sodas max_beers) [Consistent] toPred
-  where toPred Consistent state =
-          state ! NumCoins + state ! NumSodas + state ! NumBeers ==
-          max_sodas + max_beers
-```
-
-Let's check this property of our soda machine in ghci! We'll use a
-maximum capacity of `2` for both soda and beer:
+Recall that an *effect* is a function that modifies the global state.
+Since the `State` is just a map from variables to values, the simplest
+way to modify the state is to change a single variable's value. Let's
+define an *assignment* operator that works on single variables. The
+operator will be `.=`, and the syntax
 
 ``` {.haskell}
-  > checkInvariant (atom (PGStateProp Consistent)) (soda_machine_ts 2 2)
-  Just ((Select,fromList [(NumCoins,1),(NumSodas,2),(NumBeers,2)]),Path {pathHead = (Start,fromList [(NumCoins,0),(NumSodas,2),(NumBeers,2)]), pathTail = [(InsertCoin,(Select,fromList [(NumCoins,1),(NumSodas,2),(NumBeers,2)]))]})
+x .= e
 ```
 
-Aha! Our stated property actually doesn't hold. Immediately after the
-customer inserts a coin, the system is in an inconsistent state. We can
-fix this by restricting the invariant so it only applies when we are in
-the `Start` state:
+will mean "assign the value of expression `e` to the variable `x`". A
+simple way to represent an *expression* is as a function from the state
+to a particular value:
+
+``` {.haskell .literate}
+type Expr var val = State var val -> val
+```
+
+If `x :: var` is a variable, we can use `x` as an expression. In our
+representation of expressions, the *expression* `x` will be a function
+that simply looks up the variable in the state.
+
+``` {.haskell .literate}
+var :: Ord var => var -> Expr var val
+var x state = state Map.! x
+```
+
+If `c :: val` is a constant value, we can use `c` as an expression. In
+our representation, the *expression* `c` will be a function that ignores
+the current state and returns the value `c`.
+
+``` {.haskell .literate}
+val :: val -> Expr var val
+val c _ = c
+```
+
+If `val` is a numeric type, we can build up expressions using numeric
+operators:
+
+``` {.haskell .literate}
+(.+) :: Num val => Expr var val -> Expr var val -> Expr var val
+(e1 .+ e2) state = e1 state + e2 state
+infixl 6 .+
+```
+
+``` {.haskell .literate}
+(.-) :: Num val => Expr var val -> Expr var val -> Expr var val
+(e1 .- e2) state = e1 state - e2 state
+infixl 6 .-
+```
+
+``` {.haskell .literate}
+(.*) :: Num val => Expr var val -> Expr var val -> Expr var val
+(e1 .* e2) state = e1 state * e2 state
+infixl 7 .*
+```
+
+Now, let's quickly play around in ghci to get a feel:
 
 ``` {.haskell}
-  > checkInvariant (atom (PGInLoc Start) .-> atom (PGStateProp Consistent)) (soda_machine_ts 2 2)
-  Nothing
+  > data XY = X | Y deriving (Show, Eq, Ord)
+  > :t var X
+  var X :: Expr XY val
+  > :t (var X .+ val 1) .- var Y
+  (var X .+ var 1) .- var Y :: Num val => Expr XY val
 ```
 
-Wonderful! Now we know that whenever the machine is in the `Start`
-state, the number of coins is equal to the number of sodas and beers
-that were purchased.
+To evaluate an expression, just supply it with a concrete state:
+
+``` {.haskell}
+  > import qualified Data.Map as Map
+  > (var X .+ val 1) .- var Y $ Map.fromList [(X, 4), (Y, -2)]
+  7
+```
+
+Now, we can finally define the most basic nontrivial `Effect`: assigning
+a variable in the state to an expression. We'll use `.=` to denote
+variable assignment.
+
+``` {.haskell .literate}
+(.=) :: Ord var => var -> Expr var val -> Effect var val
+(x .= e) state = Map.insert x (e state) state
+infix 2 .=
+```
+
+In other words, `x .= e` is the function which, given a `State`,
+evaluates the expression `e` over the `State` to get value `v`, and sets
+`x`'s value to `v` in the returned state. Again, let's check it out with
+ghci:
+
+``` {.haskell}
+  > :t X .= var Y .* var Y
+  X .= var Y .* var Y :: Num val => Effect XY val
+  > X .= var Y .* var Y $ Map.fromList [(X, 4), (Y, -2)]
+  fromList [(X,-4),(Y,-2)]
+```
+
+We can combine two effects with the `>>>` operator (flipped function
+composition) from `Control.Arrow`:
+
+``` {.haskell}
+  > import Control.Arrow ((>>>))
+  > :t (X .= var Y) >>> (Y .= var Y .+ val 1)
+  X .= var Y >>> Y .= var Y .+ val 1
+    :: Num val => State XY val -> State XY val
+  > (X .= var Y) >>> (Y .= var Y .+ val 1) $ Map.fromList [(X, 1), (Y, 2)]
+  fromList [(X,2),(Y,3)]
+```
+
+If `a` and `b` are effects, `a >>> b` is the effect which results from
+first performing `a`, then performing `b`.
+
+## Building state predicates
+
+Recall that our `CondGoto` constructor takes a
+`Predicate (State var val)` as its first argument. This predicate is a
+function `State var val -> Bool` which, if it evaluates to true on the
+current state, causes the line number to change to the value specified
+by the second argument of `CondGoto`.
+
+For the time being, we'll only need a few operators to build up these
+predicates. The first will be the equality operator, which evaluates two
+expressions and determines if they are equal:
+
+``` {.haskell .literate}
+(.==) :: Eq val => Expr var val -> Expr var val -> Predicate (State var val)
+(e1 .== e2) state = e1 state == e2 state
+infix 4 .==
+```
+
+The next will be the inequality operators:
+
+``` {.haskell .literate}
+(.<=) :: Ord val => Expr var val -> Expr var val -> Predicate (State var val)
+(e1 .<= e2) state = e1 state <= e2 state
+infix 4 .<=
+```
+
+``` {.haskell .literate}
+(.<) :: Ord val => Expr var val -> Expr var val -> Predicate (State var val)
+(e1 .< e2) state = e1 state < e2 state
+infix 4 .<
+```
+
+``` {.haskell .literate}
+(.>=) :: Ord val => Expr var val -> Expr var val -> Predicate (State var val)
+(e1 .>= e2) state = e1 state >= e2 state
+infix 4 .>=
+```
+
+``` {.haskell .literate}
+(.>) :: Ord val => Expr var val -> Expr var val -> Predicate (State var val)
+(e1 .> e2) state = e1 state > e2 state
+infix 4 .>
+```
+
+This is all we're going to need for this post, but it's an easy enough
+language to extend whenever we need new effects or state predicates.
+
+## An example (sequential) program
+
+Let's use this language to implement the factorial function, just to
+illustrate how the different language constructs work.
+
+We're going to hand-translate this C function:
+
+``` {.c}
+int fact(int n) {
+  int res = 1;
+  while (n > 1) {
+    res *= n;
+    n -= 1;
+  }
+  return res;
+}
+```
+
+into a program written in the above, two-statement language. The program
+has two variables, `n` and `res`:
+
+``` {.haskell .literate}
+data FactVar = N | Res deriving (Show, Eq, Ord)
+```
+
+The state of our program will be an assignment of a particular integer
+to each of these variables, or a `State FactVar Int`.
+
+Now we're ready to write the `fact` program (line numbers are listed in
+comments to the left of each command):
+
+``` {.haskell .literate}
+fact :: Prog FactVar Int
+fact = Vec.fromList
+  {- 0 -} [ Modify (Res .= val 1)
+  {- 1 -} , CondGoto (var N .<= val 1) 5
+  {- 2 -} ,   Modify (Res .= var Res .* var N)
+  {- 3 -} ,   Modify (N   .= var N   .- val 1)
+  {- 4 -} ,   goto 1
+  {- 5 -} , goto 5 -- halt
+          ]
+```
+
+We don't have a separate `Halt` instruction, so we model that with a
+`goto` statement that points to itself, infinitely looping.
+
+# From sequential programs to transition systems
+
+In order to model check programs, we'll need to be able to convert a
+program into a transition system. The basic idea will be that a state in
+the transition system will be a pair `(LineNumber, State var val)`,
+consisting of the current line number and the current values of the
+program variables. Each state will have exactly one outgoing transition,
+which corresponds to executing the statement at the current line of the
+program and then going to the next line to be executed.
+
+The atomic propositional variables will be defined by the caller. The
+caller will provide a list of variables, along with a function mapping
+each variable to some predicate involving the current line number and
+variable state. Then, the label of each state will be the set of
+variables whose corresponding predicate is true at the current
+`(LineNumber, State var val)` pair.
+
+The `action` type will just be `LineNumber`, corresponding to
+"performing the statement at the given line."
+
+``` {.haskell .literate}
+progToTS :: State var val
+         -> [ap]
+         -> (ap -> Predicate (LineNumber, State var val))
+         -> Prog var val
+         -> TransitionSystem (LineNumber, State var val) LineNumber ap
+progToTS initialState aps apToPred prog = TransitionSystem
+  { tsInitialStates = [(0, initialState)]
+  , tsLabel = \(lineNum, state) -> [ p | p <- aps, apToPred p (lineNum, state) ]
+  , tsTransitions = \(lineNum, state) -> case prog Vec.! lineNum of
+      Modify effect -> [(lineNum, (lineNum+1, effect state))]
+      CondGoto p lineNum'
+        | p state   -> [(lineNum, (lineNum' , state))]
+        | otherwise -> [(lineNum, (lineNum+1, state))]
+  }
+```
+
+To compute the factorial of `4`, we can build the transition system with
+an initial state of `n = 4`. We aren't interested in checking any
+properties, just in illustrating what the transition system looks like;
+therefore, we'll use `Void` as our set of atomic propositions, since we
+don't need any.
+
+``` {.haskell .literate}
+factTS :: TransitionSystem (LineNumber, State FactVar Int) LineNumber Void
+factTS = progToTS initialState [] absurd fact
+  where initialState = Map.fromList [(N, 4), (Res, 0)]
+```
+
+Here's a nice picture of `factTS`. Each state's name is written in the
+format `lineNum: <n=value, res=value>`:
+
+![Transition system for the `fact` function with input
+`n = 4`](../images/fact.png){width="30%" height="30%"}
+
+# Parallel programs
+
+A *parallel program* is just an array of programs:
+
+``` {.haskell .literate}
+type ParProg var val = Vector (Prog var val)
+```
+
+## Peterson's algorithm
+
+# From parallel programs to transition systems
+
+## Model checking Peterson's algorithm
 
 # Conclusion
-
-In this post, we explored how to convert a higher-level imperative
-"program graph", with a global state and guarded transitions, can be
-"compiled" or "reified" into a transition system. We walked through an
-example program graph representing a soda machine, converted this graph
-to a transition system, and checked an invariant of that system to show
-that our machine has a nice property.
-
-In the next post, we'll explore how a few techniques for modeling
-concurrent processes.

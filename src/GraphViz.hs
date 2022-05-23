@@ -13,6 +13,8 @@ import Data.Graph.Inductive.Graph (Node)
 import Data.Map ((!))
 import Data.Maybe (fromJust)
 import Data.String
+import Data.Vector (Vector)
+import qualified Data.Vector as Vec
 
 class ActionLabel l where
   actionLabel :: l -> String
@@ -20,16 +22,22 @@ class ActionLabel l where
 instance ActionLabel Change where
   actionLabel Change = "change"
 
-instance ActionLabel SodaMachineAction where
-  actionLabel InsertCoin = "insert coin"
-  actionLabel GetSoda = "get soda"
-  actionLabel GetBeer = "get beer"
-  actionLabel ReturnCoin = "return coin"
-  actionLabel ServiceMachine = "service machine"
+-- instance ActionLabel SodaMachineAction where
+--   actionLabel InsertCoin = "insert coin"
+--   actionLabel GetSoda = "get soda"
+--   actionLabel GetBeer = "get beer"
+--   actionLabel ReturnCoin = "return coin"
+--   actionLabel ServiceMachine = "service machine"
 
 instance (ActionLabel a, ActionLabel b) => ActionLabel (Either a b) where
   actionLabel (Left a) = actionLabel a
   actionLabel (Right b) = actionLabel b
+
+instance ActionLabel (Int, LineNumber) where
+  actionLabel _ = ""
+
+instance ActionLabel LineNumber where
+  actionLabel lineNum = show lineNum
 
 -- instance ActionLabel ProcessAction where
 --   actionLabel StartWaiting = "start waiting"
@@ -71,11 +79,16 @@ graphTS path ts = void $ GV.runGraphviz (tsDotGraph ts) GV.Png path
 instance GV.Labellable Color where
   toLabelValue = GV.toLabelValue . show
 
-instance GV.Labellable (SodaMachineLoc, State SodaMachineVar Int) where
-  toLabelValue (loc, state) = GV.toLabelValue $
-    show loc ++ ": <ncoins=" ++ show (state ! NumCoins)
-             ++   ",nsodas=" ++ show (state ! NumSodas)
-             ++   ",nbeers=" ++ show (state ! NumBeers) ++ ">"
+-- instance GV.Labellable (SodaMachineLoc, State SodaMachineVar Int) where
+--   toLabelValue (loc, state) = GV.toLabelValue $
+--     show loc ++ ": <ncoins=" ++ show (state ! NumCoins)
+--              ++   ",nsodas=" ++ show (state ! NumSodas)
+--              ++   ",nbeers=" ++ show (state ! NumBeers) ++ ">"
+
+-- instance (GV.Labellable (LineNumber, State IJ Int)) where
+--   toLabelValue (lineNum, state) = GV.toLabelValue $
+--     show lineNum ++ ": <i=" ++ show (state ! I)
+--                  ++   ",j=" ++ show (state ! J) ++ ">"
 
 -- instance GV.Labellable (ProcessLoc, State Lock Bool) where
 --   toLabelValue (loc, state) = GV.toLabelValue $
@@ -92,8 +105,15 @@ instance GV.Labellable (SodaMachineLoc, State SodaMachineVar Int) where
 --     "b2=" ++ show (state ! B2) ++ ", " ++
 --     "x=" ++ show (state ! X) ++ ">"
 
-instance GV.Labellable (Int, Int) where
-  toLabelValue (x, y) = GV.toLabelValue $ show (x, y)
+-- instance GV.Labellable (Vector LineNumber, State PetersonVar Bool) where
+--   toLabelValue (lineNums, state) = GV.toLabelValue $
+--     "(" ++ show (lineNums Vec.! 0) ++ "," ++ show (lineNums Vec.! 1) ++ "): " ++
+--     "<x=" ++ show (state ! X) ++ ", " ++
+--     "b1=" ++ show (state ! B1) ++ ", " ++
+--     "b2=" ++ show (state ! B2) ++ ">"
 
-instance GV.Labellable ((Int, Int), Int) where
-  toLabelValue ((x, y), z) = GV.toLabelValue $ show (x, y, z)
+instance GV.Labellable (LineNumber, State FactVar Int) where
+  toLabelValue (lineNum, state) = GV.toLabelValue $
+    show lineNum ++ ": " ++
+    "<n="  ++ show (state ! N  ) ++ ", " ++
+    "res=" ++ show (state ! Res) ++ ">"
