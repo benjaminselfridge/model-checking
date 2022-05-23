@@ -32,42 +32,43 @@ a *shallowly embedded domain-specific language (eDSL)* in Haskell; we won't be
 writing a lexer or parser, and we won't even be writing an expression or
 statement evaluator, because expressions and statements in our language
 constructs will *themselves* be functions which directly evaluate and modify
-(respectively) the underlying state.
+(respectively) the environment.
 
 In our language, a program is a sequence of commands, each of which does one of
 the following two things:
 
-  1. Modify the global state
+  1. Modify the global variable environment
   2. Test a condition; if it's true, go to the given line number
 
-The "global state" is just an assignment of values to a set of variables. It
-doesn't particularly matter what the variables and values are, so we'll abstract
-them with type variables `var` and `val`, respectively. Then, the *global state*
-is going to be a `Map` from `var`s to `val`s:
+The *global variable environment*, or just *environment*, is an assignment of
+values to a set of variables. It doesn't particularly matter what the variables
+and values are, so we'll abstract them with type variables `var` and `val`,
+respectively. The environment is going to be a `Map` from `var`s to `val`s:
 
-> type State var val = Map var val
+> type Env var val = Map var val
 
-A command that modifies the global state is represented as an *effect*, which is
-a function taking the old state to a new one:
+A command that modifies the global variable environment is represented as an
+*effect*, which is a function taking the old environment to a new one:
 
-> type Effect var val = State var val -> State var val
+> type Effect var val = Env var val -> Env var val
 
 A command that *branches* needs to change the current line number. We'll use
 `Int` as a sensible type for our line numbers:
 
 > type LineNumber = Int
 
-A statement in our language either changes the current global state, or
+A statement in our language either modifies the current environment, or
 conditionally changes the current line number:
 
 > data Stmt var val = Modify (Effect var val)
->                   | CondGoto (Predicate (State var val)) LineNumber
+>                   | CondGoto (Predicate (Env var val)) LineNumber
 
 To execute a `Modify` statement, we simply apply the `Effect` to the current
-state, and then go to the next line in the program. To execute a `CondGoto`
-statement, we first test the `Predicate` against the current state: if the
-predicate evaluates to true, then we go to the `LineNumber` indicated; if it is
-not true, then we go to the next line in the program.
+environment, thus modifying it, and then go to the next line in the program. To
+execute a `CondGoto` statement, we first test the `Predicate` against the
+current environment: if the predicate evaluates to true, then we go to the
+`LineNumber` indicated; if it is not true, then we go to the next line in the
+program.
 
 We'll also need an unconditional `goto` statement. We'll define it as `CondGoto
 true`, where `true :: Predicate a` is the function that always returns `True`:
@@ -86,32 +87,32 @@ In this section, we'll write a few helper functions to create `Effect`s; in the
 next one, we'll do the same for `Predicate`s. They will help us create
 easy-to-read programs in our language.
 
-Recall that an *effect* is a function that modifies the global state. Since the
-`State` is just a map from variables to values, the simplest way to modify the
-state is to change a single variable's value. Let's define an *assignment*
-operator that works on single variables. The operator will be `.=`, and the
-syntax
+Recall that an *effect* is a function that modifies the global variable
+environment. Since the `Env` is just a map from variables to values, the
+simplest way to modify the environment is to change a single variable's value.
+Let's define an *assignment* operator that works on single variables. The
+operator will be `.=`, and the syntax
 
 ```haskell
 x .= e
 ```
 
 will mean "assign the value of expression `e` to the variable `x`". A simple way
-to represent an *expression* is as a function from the state to a particular
-value:
+to represent an *expression* is as a function from the environment to a
+particular value:
 
-> type Expr var val = State var val -> val
+> type Expr var val = Env var val -> val
 
 If `x :: var` is a variable, we can use `x` as an expression. In our
 representation of expressions, the *expression* `x` will be a function that
-simply looks up the variable in the state.
+simply looks up the variable in the environment.
 
 > var :: Ord var => var -> Expr var val
-> var x state = state Map.! x
+> var x env = env Map.! x
 
 If `c :: val` is a constant value, we can use `c` as an expression. In our
 representation, the *expression* `c` will be a function that ignores the current
-state and returns the value `c`.
+environment and returns the value `c`.
 
 > val :: val -> Expr var val
 > val c _ = c
@@ -119,15 +120,15 @@ state and returns the value `c`.
 If `val` is a numeric type, we can build up expressions using numeric operators:
 
 > (.+) :: Num val => Expr var val -> Expr var val -> Expr var val
-> (e1 .+ e2) state = e1 state + e2 state
+> (e1 .+ e2) env = e1 env + e2 env
 > infixl 6 .+
 
 > (.-) :: Num val => Expr var val -> Expr var val -> Expr var val
-> (e1 .- e2) state = e1 state - e2 state
+> (e1 .- e2) env = e1 env - e2 env
 > infixl 6 .-
 
 > (.*) :: Num val => Expr var val -> Expr var val -> Expr var val
-> (e1 .* e2) state = e1 state * e2 state
+> (e1 .* e2) env = e1 env * e2 env
 > infixl 7 .*
 
 Now, let's quickly play around in ghci to get a feel:
@@ -140,7 +141,7 @@ Now, let's quickly play around in ghci to get a feel:
   (var X .+ var 1) .- var Y :: Num val => Expr XY val
 ```
 
-To evaluate an expression, just supply it with a concrete state:
+To evaluate an expression, just supply it with a concrete environment:
 
 ```haskell
   > import qualified Data.Map as Map
@@ -148,17 +149,15 @@ To evaluate an expression, just supply it with a concrete state:
   7
 ```
 
-Now, we can finally define the most basic nontrivial `Effect`: assigning a
-variable in the state to an expression. We'll use `.=` to denote variable
-assignment.
+Now, we can finally define `.=`, our variable assignment operator:
 
 > (.=) :: Ord var => var -> Expr var val -> Effect var val
-> (x .= e) state = Map.insert x (e state) state
+> (x .= e) env = Map.insert x (e env) env
 > infix 2 .=
 
-In other words, `x .= e` is the function which, given a `State`, evaluates the
-expression `e` over the `State` to get value `v`, and sets `x`'s value to `v` in
-the returned state. Again, let's check it out with ghci:
+In other words, `x .= e` is the function which, given an environment, evaluates
+the expression `e` in that environment to get a value `v`, and then sets `x`'s
+value to `v` in the environment. Again, let's check it out with ghci:
 
 ```haskell
   > :t X .= var Y .* var Y
@@ -174,7 +173,7 @@ composition) from `Control.Arrow`:
   > import Control.Arrow ((>>>))
   > :t (X .= var Y) >>> (Y .= var Y .+ val 1)
   X .= var Y >>> Y .= var Y .+ val 1
-    :: Num val => State XY val -> State XY val
+    :: Num val => Env XY val -> Env XY val
   > (X .= var Y) >>> (Y .= var Y .+ val 1) $ Map.fromList [(X, 1), (Y, 2)]
   fromList [(X,2),(Y,3)]
 ```
@@ -182,42 +181,42 @@ composition) from `Control.Arrow`:
 If `a` and `b` are effects, `a >>> b` is the effect which results from first
 performing `a`, then performing `b`.
 
-Building state predicates
+Building environment predicates
 --
 
-Recall that our `CondGoto` constructor takes a `Predicate (State var val)` as
-its first argument. This predicate is a function `State var val -> Bool` which,
-if it evaluates to true on the current state, causes the line number to change
-to the value specified by the second argument of `CondGoto`.
+Recall that our `CondGoto` constructor takes a `Predicate (Env var val)` as its
+first argument. This *environment predicate* is a function `Env var val -> Bool`
+which, if it evaluates to true in the current environment, causes the line
+number to change to the value specified by the second argument of `CondGoto`.
 
 For the time being, we'll only need a few operators to build up these
 predicates. The first will be the equality operator, which evaluates two
 expressions and determines if they are equal:
 
-> (.==) :: Eq val => Expr var val -> Expr var val -> Predicate (State var val)
-> (e1 .== e2) state = e1 state == e2 state
+> (.==) :: Eq val => Expr var val -> Expr var val -> Predicate (Env var val)
+> (e1 .== e2) env = e1 env == e2 env
 > infix 4 .==
 
 The next will be the inequality operators:
 
-> (.<=) :: Ord val => Expr var val -> Expr var val -> Predicate (State var val)
-> (e1 .<= e2) state = e1 state <= e2 state
+> (.<=) :: Ord val => Expr var val -> Expr var val -> Predicate (Env var val)
+> (e1 .<= e2) env = e1 env <= e2 env
 > infix 4 .<=
 
-> (.<) :: Ord val => Expr var val -> Expr var val -> Predicate (State var val)
-> (e1 .< e2) state = e1 state < e2 state
+> (.<) :: Ord val => Expr var val -> Expr var val -> Predicate (Env var val)
+> (e1 .< e2) env = e1 env < e2 env
 > infix 4 .<
 
-> (.>=) :: Ord val => Expr var val -> Expr var val -> Predicate (State var val)
-> (e1 .>= e2) state = e1 state >= e2 state
+> (.>=) :: Ord val => Expr var val -> Expr var val -> Predicate (Env var val)
+> (e1 .>= e2) env = e1 env >= e2 env
 > infix 4 .>=
 
-> (.>) :: Ord val => Expr var val -> Expr var val -> Predicate (State var val)
-> (e1 .> e2) state = e1 state > e2 state
+> (.>) :: Ord val => Expr var val -> Expr var val -> Predicate (Env var val)
+> (e1 .> e2) env = e1 env > e2 env
 > infix 4 .>
 
 This is all we're going to need for this post, but it's an easy enough language
-to extend whenever we need new effects or state predicates.
+to extend whenever we need new effects or environment predicates.
 
 An example (sequential) program
 --
@@ -243,9 +242,6 @@ variables, `n` and `res`:
 
 > data FactVar = N | Res deriving (Show, Eq, Ord)
 
-The state of our program will be an assignment of a particular integer to each
-of these variables, or a `State FactVar Int`.
-
 Now we're ready to write the `fact` program (line numbers are listed in comments
 to the left of each command):
 
@@ -267,7 +263,7 @@ From sequential programs to transition systems
 
 In order to model check programs, we'll need to be able to convert a program
 into a transition system. The basic idea will be that a state in the transition
-system will be a pair `(LineNumber, State var val)`, consisting of the current
+system will be a pair `(LineNumber, Env var val)`, consisting of the current
 line number and the current values of the program variables. Each state will
 have exactly one outgoing transition, which corresponds to executing the
 statement at the current line of the program and then going to the next line to
@@ -275,34 +271,34 @@ be executed.
 
 The atomic propositional variables will be defined by the caller. The caller
 will provide a list of variables, along with a function mapping each variable to
-some predicate involving the current line number and variable state. Then, the
-label of each state will be the set of variables whose corresponding predicate
-is true at the current `(LineNumber, State var val)` pair.
+some predicate involving the current line number and global variable
+environment. Then, the label of each state will be the set of variables whose
+corresponding predicate is true at the current `(LineNumber, Env var val)` pair.
 
 The `action` type will just be `LineNumber`, corresponding to "performing the
 statement at the given line."
 
-> progToTS :: State var val
+> progToTS :: Env var val
 >          -> [ap]
->          -> (ap -> Predicate (LineNumber, State var val))
+>          -> (ap -> Predicate (LineNumber, Env var val))
 >          -> Prog var val
->          -> TransitionSystem (LineNumber, State var val) LineNumber ap
-> progToTS initialState aps apToPred prog = TransitionSystem
->   { tsInitialStates = [(0, initialState)]
->   , tsLabel = \(lineNum, state) -> [ p | p <- aps, apToPred p (lineNum, state) ]
->   , tsTransitions = \(lineNum, state) -> case prog Vec.! lineNum of
->       Modify effect -> [(lineNum, (lineNum+1, effect state))]
+>          -> TransitionSystem (LineNumber, Env var val) LineNumber ap
+> progToTS initialEnv aps apToPred prog = TransitionSystem
+>   { tsInitialStates = [(0, initialEnv)]
+>   , tsLabel = \(lineNum, env) -> [ p | p <- aps, apToPred p (lineNum, env) ]
+>   , tsTransitions = \(lineNum, env) -> case prog Vec.! lineNum of
+>       Modify effect -> [(lineNum, (lineNum+1, effect env))]
 >       CondGoto p lineNum'
->         | p state   -> [(lineNum, (lineNum' , state))]
->         | otherwise -> [(lineNum, (lineNum+1, state))]
+>         | p env     -> [(lineNum, (lineNum' , env))]
+>         | otherwise -> [(lineNum, (lineNum+1, env))]
 >   }
 
 To compute the factorial of `4`, we can build the transition system with an
-initial state of `n = 4`. We aren't interested in checking any properties, just
-in illustrating what the transition system looks like; therefore, we'll use
+initial environment of `n = 4`. We aren't interested in checking any properties,
+just in illustrating what the transition system looks like; therefore, we'll use
 `Void` as our set of atomic propositions, since we don't need any.
 
-> factTS :: TransitionSystem (LineNumber, State FactVar Int) LineNumber Void
+> factTS :: TransitionSystem (LineNumber, Env FactVar Int) LineNumber Void
 > factTS = progToTS initialState [] absurd fact
 >   where initialState = Map.fromList [(N, 4), (Res, 0)]
 

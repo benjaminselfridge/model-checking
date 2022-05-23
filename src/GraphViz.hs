@@ -112,7 +112,7 @@ instance GV.Labellable Color where
 --     "b1=" ++ show (state ! B1) ++ ", " ++
 --     "b2=" ++ show (state ! B2) ++ ">"
 
-instance GV.Labellable (LineNumber, State FactVar Int) where
+instance GV.Labellable (LineNumber, Env FactVar Int) where
   toLabelValue (lineNum, state) = GV.toLabelValue $
     show lineNum ++ ": " ++
     "<n="  ++ show (state ! N  ) ++ ", " ++
