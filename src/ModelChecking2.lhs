@@ -543,10 +543,10 @@ Let's check our loop invariant for `factTS` for all values of `n` from `1` to `2
   Nothing
 ```
 
-Here's a nice picture of `factTS` for `n = 4`. Each state's name is written in
-the format `lineNum: <n=value, res=value>`:
+Here's a nice picture of `factTS 4`. Each state's name is written in the format
+`lineNum: <n=value, res=value>`:
 
-![Transition system for the `fact` function with input `n = 4`](../images/fact.png){width=100% height=100%}
+![Transition system for the `fact` function with inputs `n = 1` through `4`](../images/fact.png){width=100% height=100%}
 
 That's it for sequential programs
 --

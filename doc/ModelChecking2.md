@@ -636,21 +636,11 @@ Let's check our loop invariant for `factTS` for all values of `n` from
   Nothing
 ```
 
-Here's a nice picture of `factTS` for `n = 4`. Each state's name is
-written in the format `lineNum: <n=value, res=value>`:
+Here's a nice picture of `factTS 4`. Each state's name is written in the
+format `lineNum: <n=value, res=value>`:
 
-![Transition system for the `fact` function with input
-`n = 4`](../images/fact.png){width="100%" height="100%"}
-
-We can easily check that this invariant holds throughout the program's
-execution, for any concrete `n`:
-
-``` {.haskell}
-  > checkInvariant (atom FactInvariant) (factTS 4)
-  Nothing
-  > checkInvariant (atom FactInvariant) (factTS 20)
-  Nothing
-```
+![Transition system for the `fact` function with inputs `n = 1` through
+`4`](../images/fact.png){width="100%" height="100%"}
 
 ## That's it for sequential programs
 
