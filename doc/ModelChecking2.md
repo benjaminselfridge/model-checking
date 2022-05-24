@@ -36,18 +36,20 @@ import Data.Void
 
 In this section, we'll define a simple, Turing-complete imperative
 language with variable assignments and conditional gotos. The language
-will be implemented as a *shallowly embedded domain-specific language
+will be implemented as a *shallowly-embedded domain-specific language
 (eDSL)* in Haskell; we won't be writing a lexer or parser, and we won't
 even be writing an expression or statement evaluator, because
 expressions and statements in our language constructs will *themselves*
 be functions which directly evaluate and modify (respectively) the
 environment.
 
-In our language, a program is a sequence of commands, each of which does
-one of the following two things:
+In our language, a program is a sequence of statements. There are two
+kinds of statements:
 
-1.  Modify the global variable environment
-2.  Test a condition; if it's true, go to the given line number
+1.  `Modify`: modify the global variable environment (e.g. assign a
+    variable to a value)
+2.  `IfGoto`: test a condition; if it's true, go to the given line
+    number
 
 The *global variable environment*, or just *environment*, is an
 assignment of values to a set of variables. It doesn't particularly
@@ -59,7 +61,7 @@ to be a `Map` from `var`s to `val`s:
 type Env var val = Map var val
 ```
 
-A command that modifies the global variable environment is represented
+A statement that modifies the global variable environment is represented
 as an *effect*, which is a function taking the old environment to a new
 one:
 
@@ -67,8 +69,8 @@ one:
 type Effect var val = Env var val -> Env var val
 ```
 
-A command that *branches* needs to change the current line number. We'll
-use `Int` as a sensible type for our line numbers:
+A statement that *branches* needs to change the current line number.
+We'll use `Int` as a sensible type for our line numbers:
 
 ``` {.haskell .literate}
 type LineNumber = Int
@@ -79,75 +81,141 @@ conditionally goes to the given line number:
 
 ``` {.haskell .literate}
 data Stmt var val = Modify (Effect var val)
-                  | CondGoto (Predicate (Env var val)) LineNumber
+                  | IfGoto (Predicate (Env var val)) LineNumber
 ```
 
 To execute a `Modify` statement, we simply apply the `Effect` to the
 current environment, thus modifying it, and then go to the next line in
-the program. To execute a `CondGoto` statement, we first test the
+the program. To execute an `IfGoto` statement, we first test the
 `Predicate` against the current environment: if the predicate evaluates
 to true, then we go to the `LineNumber` indicated; if it is not true,
 then we go to the next line in the program.
 
 We'll also need an unconditional `goto` statement. We'll define it as
-`CondGoto true`, where `true :: Predicate a` is the function that always
-returns `True`:
+`IfGoto true`, where `true :: Predicate a` (defined in the previous
+post) is the function that always returns `True`:
 
 ``` {.haskell .literate}
 goto :: LineNumber -> Stmt var val
-goto lineNum = CondGoto true lineNum
+goto lineNum = IfGoto true lineNum
 ```
 
-A program is just an array (here, a `Vector`) of statements:
+A program is just a `Vector` of statements:
 
 ``` {.haskell .literate}
 type Prog var val = Vector (Stmt var val)
 ```
 
-## Building effects
+## The `Modify` statement
 
-In this section, we'll write a few helper functions to create `Effect`s;
-in the next one, we'll do the same for `Predicate`s. They will help us
-create easy-to-read programs in our language.
+In this section and the next section, we will define some helper
+functions that will make it easier to create readable statements in our
+language. In this section, we focus on `Modify`; in the next, we'll look
+at `IfGoto`.
+
+The `Modify` constructor takes a single argument, an `Effect`:
+
+``` {.haskell}
+Modify :: Effect var val -> Stmt var val
+```
 
 Recall that an *effect* is a function that modifies the global variable
-environment. Since the `Env` is just a map from variables to values, the
-simplest way to modify the environment is to change a single variable's
-value. Let's define an *assignment* operator that works on single
-variables. The operator will be `.=`, and the syntax
+environment:
+
+``` {.haskell}
+type Effect var val = Env var val -> Env var val
+```
+
+In C, we might see a line like this:
+
+``` {.c}
+int x = y * 4;
+```
+
+The left-hand side of the `=` is a variable, and the right-hand side is
+an *expression* that can be evaluated, given an environment that has a
+definition for the variable `y`. In our language, we could write the
+corresponding `Modify` statement like so:
+
+``` {.haskell}
+data XY = X | Y deriving (Show, Eq, Ord)
+
+modify_stmt :: Stmt XY Int
+modify_stmt = Modify (\env -> Map.insert X (env Map.! Y * 4) env)
+```
+
+The function we passed to `Modify` took the current environment and
+modified it by looking up the value of `Y`, adding `4` to it, and
+setting `X` equal to the result. This is okay, but it would be much
+nicer to write something that looked more like the corresponding C
+statement.
+
+To accomplish this, we'll define an *assignment* operator that works on
+single variables. The operator will be `.=`, and the syntax
 
 ``` {.haskell}
 x .= e
 ```
 
-will mean "assign the value of expression `e` to the variable `x`". A
-simple way to represent an *expression* is as a function from the
-environment to a particular value:
+will mean "evaluate the expression `e` and assign the result to the
+variable `x`". A simple way to represent an *expression* is as a
+function from the environment to a particular value:
 
 ``` {.haskell .literate}
 type Expr var val = Env var val -> val
 ```
 
-If `x :: var` is a variable, we can use `x` as an expression. In our
-representation of expressions, the *expression* `x` will be a function
-that simply looks up the variable in the environment.
+Then, the assignment operator can be written as
+
+``` {.haskell .literate}
+(.=) :: Ord var => var -> Expr var val -> Effect var val
+(x .= e) env = Map.insert x (e env) env
+infix 2 .=
+```
+
+This allows us to create an `Effect`, which is a function, without
+writing an explicit lambda or defining the function in a `let` or
+`where` clause. Now, we can define the `x_equals_4_y` statement a bit
+more nicely:
+
+``` {.haskell}
+modify_stmt :: Stmt XY Int
+modify_stmt = Modify (X .= (\env -> env Map.! Y * 4))
+```
+
+This is better. However, the `Expr` we are binding `X` to is still
+defined in terms of a lambda expression and an explicit `Map.!`
+operator. We can do a bit better still by defining some more functions
+to build `Expr`s more cleanly. We'll create "atomic" expressions from
+variables and values, and combine expressions using numeric operators.
+We will also be able to "lift" ordinary functions into our language.
+This is made especially easy because we chose a shallow embedding
+approach.
+
+If `x :: var` is a variable, we can create a corresponding expression
+for `x`. In our representation, the *expression* for `x` will be a
+function that simply looks up `x` in the environment and returns its
+value. The function `var` "lifts" any variable to its corresponding
+expression.
 
 ``` {.haskell .literate}
 var :: Ord var => var -> Expr var val
 var x env = env Map.! x
 ```
 
-If `c :: val` is a constant value, we can use `c` as an expression. In
-our representation, the *expression* `c` will be a function that ignores
-the current environment and returns the value `c`.
+If `c :: val` is a constant value, we can create a corresponding
+expression for `c`. In our representation, the *expression* for `c` will
+be a function that ignores the current environment and blindly returns
+the value `c`. The function `val` "lifts" a constant value to its
+corresponding expression.
 
 ``` {.haskell .literate}
 val :: val -> Expr var val
 val c _ = c
 ```
 
-If `val` is a numeric type, we can build up expressions using numeric
-operators:
+If `val` is a numeric type, we can lift the usual numeric operators to
+expressions:
 
 ``` {.haskell .literate}
 (.+) :: Num val => Expr var val -> Expr var val -> Expr var val
@@ -167,6 +235,14 @@ infixl 6 .-
 infixl 7 .*
 ```
 
+Furthermore, if a function `f : val -> val` transforms values, we can
+lift `f` to a function that transforms expressions:
+
+``` {.haskell .literate}
+liftFun :: (val -> val) -> Expr var val -> Expr var val
+liftFun f e env = f (e env)
+```
+
 Now, let's quickly play around in ghci to get a feel:
 
 ``` {.haskell}
@@ -175,38 +251,32 @@ Now, let's quickly play around in ghci to get a feel:
   var X :: Expr XY val
   > :t (var X .+ val 1) .- var Y
   (var X .+ var 1) .- var Y :: Num val => Expr XY val
+  > :t liftFun (+1) (var X)
+  liftFun (+1) (var X) :: Num val => Expr XY val
 ```
 
-To evaluate an expression, just supply it with a concrete environment:
+To evaluate an expression, we just *apply* it (as a function) to an
+environment:
 
 ``` {.haskell}
   > import qualified Data.Map as Map
   > (var X .+ val 1) .- var Y $ Map.fromList [(X, 4), (Y, -2)]
   7
+  > liftFun (+1) (var X) $ Map.fromList [(X, 4), (Y, -2)]
+  5
 ```
 
-Now, we can finally define `.=`, our variable assignment operator:
-
-``` {.haskell .literate}
-(.=) :: Ord var => var -> Expr var val -> Effect var val
-(x .= e) env = Map.insert x (e env) env
-infix 2 .=
-```
-
-In other words, `x .= e` is the function which, given an environment,
-evaluates the expression `e` in that environment to get a value `v`, and
-then sets `x`'s value to `v` in the environment. Again, let's check it
-out with ghci:
+Now, we can rewrite our `int x = y * 4;` statement in a much nicer way:
 
 ``` {.haskell}
-  > :t X .= var Y .* var Y
-  X .= var Y .* var Y :: Num val => Effect XY val
-  > X .= var Y .* var Y $ Map.fromList [(X, 4), (Y, -2)]
-  fromList [(X,-4),(Y,-2)]
+modify_stmt :: Stmt XY Int
+modify_stmt = Modify (X .= var Y .* 4)
 ```
 
-We can combine two effects with the `>>>` operator (flipped function
-composition) from `Control.Arrow`:
+If we have *two* effects that we'd like to perform, one after another,
+we can combine them with the `>>>` operator from `Control.Arrow`. If `a`
+and `b` are effects, `a >>> b` is the effect which results from first
+performing `a`, then performing `b`.
 
 ``` {.haskell}
   > import Control.Arrow ((>>>))
@@ -217,20 +287,51 @@ composition) from `Control.Arrow`:
   fromList [(X,2),(Y,3)]
 ```
 
-If `a` and `b` are effects, `a >>> b` is the effect which results from
-first performing `a`, then performing `b`.
+## The `IfGoto` statement
 
-## Building environment predicates
+In this section, we'll define a few helper functions to help us write
+`IfGoto` statements in a readable way. The `IfGoto` takes an
+*environment predicate* and a line number as arguments:
 
-Recall that our `CondGoto` constructor takes a `Predicate (Env var val)`
-as its first argument. This *environment predicate* is a function
-`Env var val -> Bool` which, if it evaluates to true in the current
-environment, causes the line number to change to the value specified by
-the second argument of `CondGoto`.
+``` {.haskell}
+IfGoto :: Predicate (Env var val) -> LineNumber -> Stmt var val
+```
 
-For the time being, we'll only need a few operators to build up these
-predicates. The first will be the equality operator, which evaluates two
-expressions and determines if they are equal:
+Recall from the previous post that a predicate is just a single-argument
+function that returns a `Bool`:
+
+``` {.haskell}
+type Predicate a = a -> Bool
+```
+
+Therefore, a `Predicate (Env var val)` is a function
+`Env var val -> Bool`. If this function evaluates to `True` in the
+current environment, the line number should change to the value
+specified by the second argument of `IfGoto`, the `LineNumber`.
+
+In C, we might see a conditional `goto` statement like this:
+
+``` {.c}
+if (x == 1 + y) goto label;
+```
+
+Ideally the programmer doesn't use explicit `goto`s, but in our language
+it will be the only option for affecting control flow in our programs.
+In our language, assuming `label` refers to line 17, we can write the
+corresponding `IfGoto` statement like so:
+
+``` {.haskell}
+if_goto_stmt :: Stmt XY Int
+if_goto_stmt = IfGoto (\env -> env Map.! X == 1 + env Map.! Y) 17
+```
+
+The function we passed to `IfGoto` took the current environment, looked
+up the values of `X` and `Y`, and tested whether the value of `X` was
+equal to `1` plus the value of `Y`. As with `Modify`, we'll write some
+helper functions to create these environment predicates in a way that
+more closely resembles the original `C` code. The first such function
+will be the equality operator, which evaluates two expressions and
+determines if they are equal:
 
 ``` {.haskell .literate}
 (.==) :: Eq val => Expr var val -> Expr var val -> Predicate (Env var val)
@@ -238,7 +339,7 @@ expressions and determines if they are equal:
 infix 4 .==
 ```
 
-The next will be the inequality operators:
+The next functions we'll need are the inequality operators:
 
 ``` {.haskell .literate}
 (.<=) :: Ord val => Expr var val -> Expr var val -> Predicate (Env var val)
@@ -264,12 +365,17 @@ infix 4 .>=
 infix 4 .>
 ```
 
-These are all the basic environment predicates we're going to need for
-this post, but it's an easy enough language to extend whenever we need
-new effects or environment predicates. Also note that we can combine
-predicates using the boolean operators `.&`, `.|`, `pnot`, and `.->` as
-defined in the previous post; these enable us to "build up" larger
-predicates out of smaller ones:
+We can also lift predicates about `val`s to environment predicates by
+supplying them with an expression:
+
+``` {.haskell .literate}
+liftPred :: Predicate val -> Expr var val -> Predicate (Env var val)
+liftPred f e env = f (e env)
+```
+
+Also note that we can combine predicates using the boolean operators
+`.&`, `.|`, `pnot`, and `.->` as defined in the previous post; these
+enable us to "build up" larger predicates out of smaller ones:
 
 ``` {.haskell}
   > :t (val 1 .<= var X) .& (var X .<= var Y)
@@ -277,12 +383,19 @@ predicates out of smaller ones:
   :: (Ord val, Num val) => Predicate (Env XY val)
 ```
 
-## An example (sequential) program
+Now, we can implement the C statement `if (x == 1 + y) goto label;` in a
+much nicer way:
 
-Let's use this language to implement the factorial function, just to
-illustrate how the different language constructs work.
+``` {.haskell}
+if_goto_stmt :: Stmt XY Int
+if_goto_stmt = IfGoto (var X .== val 1 .+ var Y) 17
+```
 
-We're going to hand-translate this C function:
+## Implementing factorial
+
+Now, let's implement the factorial function, just to illustrate how the
+different language constructs work. We're going to hand-translate this C
+function:
 
 ``` {.c}
 int fact(int n) {
@@ -303,15 +416,15 @@ data FactVar = N | Res deriving (Show, Eq, Ord)
 ```
 
 Now we're ready to write the `fact` program (line numbers are listed in
-comments to the left of each command):
+comments to the left of each statement):
 
 ``` {.haskell .literate}
 fact :: Prog FactVar Int
 fact = Vec.fromList
   {- 0 -} [ Modify (Res .= val 1)
-  {- 1 -} , CondGoto (var N .<= val 1) 5
-  {- 2 -} ,   Modify (Res .= var Res .* var N)
-  {- 3 -} ,   Modify (N   .= var N   .- val 1)
+  {- 1 -} , IfGoto (var N .<= val 1) 5
+  {- 2 -} ,   Modify (Res .= (var Res .* var N))
+  {- 3 -} ,   Modify (N   .= (var N   .- val 1))
   {- 4 -} ,   goto 1
   {- 5 -} , goto 5 -- halt
           ]
@@ -347,26 +460,123 @@ progToTS :: Env var val
          -> Prog var val
          -> TransitionSystem (LineNumber, Env var val) LineNumber ap
 progToTS initialEnv aps apToPred prog = TransitionSystem
+```
+
+The first argument to this function, `initialEnv`, is the initial values
+of every variable used in the program. Every program starts at line `0`.
+Therefore, there will be only one initial state: the pair
+`(0, initialEnv)`.
+
+``` {.haskell .literate}
   { tsInitialStates = [(0, initialEnv)]
-  , tsLabel = \(lineNum, env) -> [ p | p <- aps, apToPred p (lineNum, env) ]
+```
+
+Given a state `s :: (LineNumber, Env var val)`, the label of `s` is the
+set of all atomic propositional variables (as supplied by the caller)
+whose corresponding environment predicate is satisified by `s`:
+
+``` {.haskell .literate}
+  , tsLabel = \s -> [ p | p <- aps, s |= apToPred p ]
+```
+
+Each state `(lineNum, env) :: (LineNumber, Env var val)` as a single
+outgoing transition.
+
+``` {.haskell .literate}
   , tsTransitions = \(lineNum, env) -> case prog Vec.! lineNum of
+```
+
+The `Modify` statement transitions to the next line, and modifies the
+environment by applying the given effect:
+
+``` {.haskell .literate}
       Modify effect -> [(lineNum, (lineNum+1, effect env))]
-      CondGoto p lineNum'
+```
+
+The `IfGoto` statement tests the environment predicate; if it's true, we
+transition to the given line number, and if it's false, we transition to
+the next line number. In both cases, the global variable environment is
+left unchanged.
+
+``` {.haskell .literate}
+      IfGoto p lineNum'
         | p env     -> [(lineNum, (lineNum' , env))]
         | otherwise -> [(lineNum, (lineNum+1, env))]
   }
 ```
 
-To compute the factorial of `4`, we can build the transition system with
-an initial environment of `n = 4`. We aren't interested in checking any
-properties, just in illustrating what the transition system looks like;
-therefore, we'll use `Void` as our set of atomic propositions, since we
-don't need any.
+## Defining invariants
+
+To call `progToTS`, we need to define our set of atomic propositions, as
+well as how those propositions map to predicates about the current line
+number and environment. The following "lifting" operators will be nice
+to have, as they will enable us to smoothly define these predicates:
 
 ``` {.haskell .literate}
-factTS :: TransitionSystem (LineNumber, Env FactVar Int) LineNumber Void
-factTS = progToTS initialState [] absurd fact
-  where initialState = Map.fromList [(N, 4), (Res, 0)]
+liftL :: Predicate a -> Predicate (a, b)
+liftL p (a, _) = p a
+```
+
+``` {.haskell .literate}
+liftR :: Predicate b -> Predicate (a, b)
+liftR p (_, b) = p b
+```
+
+With these operators, we can "lift" an assertion about an `Env` to an
+assertion about a `(LineNumber, Env var val)` pair:
+
+``` {.haskell .literate}
+atEnv :: Predicate (Env var val) -> Predicate (a, Env var val)
+atEnv = liftR
+```
+
+Furthermore, we sometimes will wish to define invariants that only apply
+when we are at a specific line number, so the following function will be
+useful:
+
+``` {.haskell .literate}
+atLine :: LineNumber -> Predicate (LineNumber, a)
+atLine lineNum = liftL (== lineNum)
+```
+
+## Converting the factorial program to a transition system
+
+To compute the factorial of `n`, we can build the transition system with
+an initial environment of `N = n`. Before we do this, we need to decide
+what our atomic propositional variables will be, and what conditions
+they will represent about the state of the system.
+
+One reasonable invariant we might like to check is that at the start of
+each loop iteration, we have that `Res * N! == n!`, where `n` is the
+original input value and `N` is the current value of the variable. We
+can abstract this invariant into a data type which we can use as our
+atomic proposition type:
+
+``` {.haskell .literate}
+data FactInvariant = FactInvariant deriving (Show, Eq, Ord)
+```
+
+Now, we can define `factTS` for a given input `n` by explicitly mapping
+`FactInvariant` to the condition that `Res * N! == n!`. However, we
+don't want to check this condition at *every* state at the program; we
+only care if it's true at the beginning of each loop iteration, line 1.
+Therefore, we must guard the predicate with an assertion that we are at
+the line. The state predicate we are looking for is
+
+``` {.haskell}
+atLine 1 .-> atEnv (liftFun factorial (var N) .* var Res .== val (factorial n))
+```
+
+Now, let's define `factTS` by mapping `FactInvariant` to the above
+predicate:
+
+``` {.haskell .literate}
+factTS :: Int -> TransitionSystem (LineNumber, Env FactVar Int) LineNumber FactInvariant
+factTS n = progToTS initialState [FactInvariant] apToPred fact
+  where initialState = Map.fromList [(N, n), (Res, 0)]
+        factorial i = product [1..i]
+        apToPred FactInvariant =
+          atLine 1 .-> atEnv (liftFun factorial (var N) .* var Res .== val (factorial n))
 ```
 
 Here's a nice picture of `factTS`. Each state's name is written in the
@@ -374,6 +584,30 @@ format `lineNum: <n=value, res=value>`:
 
 ![Transition system for the `fact` function with input
 `n = 4`](../images/fact.png){width="30%" height="30%"}
+
+## That's it for sequential programs
+
+Unfortunately, there's not much else to say about `fact`, or about any
+deterministic sequential program for that matter. We're not going to be
+able to prove anything in general about such a program, because in order
+to even convert a program into a transition system, all of the variables
+must have concrete values; therefore, "checking an invariant" of this
+system will be little more than simulating the program for a particular
+input. For instance, suppose we wanted to make sure that at each loop
+iteration, `Res * N! == n!`, where `n` is the original input value and
+`N` is the current value of the `N` variable. We could certainly do
+this:
+
+This is nice, because it doesn't just check that result of the program
+is correct; it actually shows that for input `4`, the values of `N` and
+`Res` are consistent at every loop iteration. However, it's still deeply
+unsatisfying because it doesn't say anything about arbitrary `N`.
+
+This is less of an issue with parallel programs, which are inherently
+nondeterministic; therefore, we'll focus on parallel programs and
+protocols for the rest of this blog series. In the next section, we'll
+look at parallel programs that operate on a shared state, and we'll
+model check a simple mutual exclusion protocol.
 
 # Parallel programs
 
