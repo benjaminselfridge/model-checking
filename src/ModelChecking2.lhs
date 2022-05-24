@@ -228,16 +228,20 @@ modify_stmt = Modify (X .= var Y .* 4)
 ```
 
 If we have *two* effects that we'd like to perform, one after another, we can
-combine them with the `>>>` operator from `Control.Arrow`. If `a` and `b` are
-effects, `a >>> b` is the effect which results from first performing `a`, then
-performing `b`.
+combine them with the following operator:
+
+> (!:) :: Effect var val -> Effect var val -> Effect var val
+> (a !: b) env = b (a env)
+> infixr 1 !:
+
+If `a` and `b` are effects, `a !: b` is the effect which results from first
+performing `a`, then performing `b`.
 
 ```haskell
-  > import Control.Arrow ((>>>))
-  > :t (X .= var Y) >>> (Y .= var Y .+ val 1)
-  X .= var Y >>> Y .= var Y .+ val 1
+  > :t X .= var Y !: Y .= var Y .+ val 1
+  X .= var Y !: Y .= var Y .+ val 1
     :: Num val => Env XY val -> Env XY val
-  > (X .= var Y) >>> (Y .= var Y .+ val 1) $ Map.fromList [(X, 1), (Y, 2)]
+  > (X .= var Y) !: (Y .= var Y .+ val 1) $ Map.fromList [(X, 1), (Y, 2)]
   fromList [(X,2),(Y,3)]
 ```
 
@@ -342,10 +346,10 @@ function:
 
 ```c
 int fact(int n) {
-  int res = 1;
-  while (n > 1) {
-    res *= n;
-    n -= 1;
+  int i = 2, res = 1;
+  while (i <= n) {
+    res *= i;
+    i += 1;
   }
   return res;
 }
@@ -354,17 +358,17 @@ int fact(int n) {
 into a program written in the above, two-statement language. The program has two
 variables, `n` and `res`:
 
-> data FactVar = N | Res deriving (Show, Eq, Ord)
+> data FactVar = N | I | Res deriving (Show, Eq, Ord)
 
 Now we're ready to write the `fact` program (line numbers are listed in comments
 to the left of each statement):
 
 > fact :: Prog FactVar Int
 > fact = Vec.fromList
->   {- 0 -} [ Modify (Res .= val 1)
->   {- 1 -} , IfGoto (var N .<= val 1) 5
->   {- 2 -} ,   Modify (Res .= (var Res .* var N))
->   {- 3 -} ,   Modify (N   .= (var N   .- val 1))
+>   {- 0 -} [ Modify (Res .= val 1 !: I .= val 2)
+>   {- 1 -} , IfGoto (pnot (var I .<= var N)) 5
+>   {- 2 -} ,   Modify (Res .= (var Res .* var I))
+>   {- 3 -} ,   Modify (I   .= (var I   .+ val 1))
 >   {- 4 -} ,   goto 1
 >   {- 5 -} , goto 5 -- halt
 >           ]
@@ -392,18 +396,20 @@ corresponding predicate is true at the current `(LineNumber, Env var val)` pair.
 The `action` type will just be `LineNumber`, corresponding to "performing the
 statement at the given line."
 
-> progToTS :: Env var val
+> progToTS :: [Env var val]
 >          -> [ap]
 >          -> (ap -> Predicate (LineNumber, Env var val))
 >          -> Prog var val
 >          -> TransitionSystem (LineNumber, Env var val) LineNumber ap
-> progToTS initialEnv aps apToPred prog = TransitionSystem
+> progToTS initialEnvs aps apToPred prog = TransitionSystem
 
-The first argument to this function, `initialEnv`, is the initial values of
-every variable used in the program. Every program starts at line `0`. Therefore,
-there will be only one initial state: the pair `(0, initialEnv)`.
+The first argument to this function, `initialEnvs`, is a list of possible
+initial environments for the program. Every program starts at line `0`. For each
+initial environment provided by the caller, there is a corresponding initial
+state in the transition system that starts the program at line `0` with that
+initial environment:
 
->   { tsInitialStates = [(0, initialEnv)]
+>   { tsInitialStates = [ (0, env) | env <- initialEnvs ]
 
 Given a state `s :: (LineNumber, Env var val)`, the label of `s` is the set of
 all atomic propositional variables (as supplied by the caller) whose
@@ -431,13 +437,19 @@ unchanged.
 >         | otherwise -> [(lineNum, (lineNum+1, env))]
 >   }
 
-Defining invariants
+Atomic propositions
 --
 
-To call `progToTS`, we need to define our set of atomic propositions, as well as
-how those propositions map to predicates about the current line number and
-environment. The following "lifting" operators will be nice to have, as they
-will enable us to smoothly define these predicates:
+In translating to a transition system, we need to define our set of atomic
+propositional variables, which amounts to identifying a few predicates about our
+state which we are interested in. We also need to map each variable to its
+corresponding predicate when we call `progToTS`. This map needs to be a function
+of type `ap -> Predicate (LineNumber, Env var val)`; that is, our atomic
+propositions will denote predicates that take the current line number into
+account as well as the global variable environment.
+
+The following "lifting" operators will be nice to have, as they will enable us
+to smoothly define such predicates:
 
 > liftL :: Predicate a -> Predicate (a, b)
 > liftL p (a, _) = p a
@@ -445,8 +457,8 @@ will enable us to smoothly define these predicates:
 > liftR :: Predicate b -> Predicate (a, b)
 > liftR p (_, b) = p b
 
-With these operators, we can "lift" an assertion about an `Env` to an assertion
-about a `(LineNumber, Env var val)` pair:
+With these operators, we can lift a predicate about an `Env var val` to a
+predicate about a `(LineNumber, Env var val)` pair:
 
 > atEnv :: Predicate (Env var val) -> Predicate (a, Env var val)
 > atEnv = liftR
@@ -460,51 +472,81 @@ are at a specific line number, so the following function will be useful:
 Converting the factorial program to a transition system
 --
 
-Given a concrete integer `n`, we'd like to build the transition system for our
-factorial program with an initial environment of `N = n`. Before we do this, we
-need to decide what our atomic propositional variables will be, and what
-conditions they will represent about the state of the system.
+In converting a program to a transition system, we first need to choose:
 
-One reasonable property we might like to check is that at the start of each loop
-iteration, we have that `Res * N! == n!`, where `n` is the original input value
-and `N` is the current value of the variable. We can abstract this invariant
-into a data type which we can use as our atomic proposition type:
+1) The set of all possible initial environments
+2) The set of all atomic propositional variables
+3) How each atomic propositional variable maps to a *predicate* about the
+   current line number and environment
 
-> data FactInvariant = FactInvariant deriving (Show, Eq, Ord)
+In fact, these are the first three arguments of the `progToTS` function. The
+choices we make will depend on what kinds of properties we want to verify, and
+what the set of possible starting states we will want to consider.
 
-Now, we can map `FactInvariant` to the condition that `Res * N! == n!`. However,
-we don't want to check this condition at *every* state at the program; we only
-care if it's true at line 1, the beginning of each loop iteration. Therefore, we
-must guard the predicate with an assertion that we are at that line. The
-environment predicate we are looking for is
+For our factorial program, the property we'll be interested in checking is a
+loop invariant which will hold at the beginning of the loop. Whenever the
+program is at line 1, the following formula should hold:
 
-```haskell
-atLine 1 .-> atEnv (liftFun factorial (var N) .* var Res .== val (factorial n))
+```
+Res == factorial(I-1)
 ```
 
-Now, let's define `factTS` by mapping `FactInvariant` to the above predicate:
+In other words, the current value of `Res` should be the "product so far." We'd
+also like to check this loop invariant for not just one particular input value
+of `n`, but for a range of inputs.
 
-> factTS :: Int -> TransitionSystem (LineNumber, Env FactVar Int) LineNumber FactInvariant
-> factTS n = progToTS initialState [FactInvariant] apToPred fact
->   where initialState = Map.fromList [(N, n), (Res, 0)]
->         factorial i = product [1..i]
->         apToPred FactInvariant =
->           atLine 1 .-> atEnv (liftFun factorial (var N) .* var Res .== val (factorial n))
+In light of these considerations, we'll making the following respective choices:
+
+1) The set of possible initial environments will be the set of all environments
+   with `N = i` for all `i` between `1` and some maximum integer `n`. (We'll
+   initialize `Res` and `I` to `0` for completeness, but we note that their
+   initial values don't matter, since the first line of the program sets them
+   both to `1`.)
+
+2) We will have two types of atomic propositional variables: ones that indicate
+   what the current line number is, and ones that indicate whether the condition
+   `Res == factorial(I-1)` is true.
+
+3) We will map the variables described in 2) to the corresponding predicates
+   about the current `(LineNumber, Env var val)` state in the transition system.
+
+Our atomic propositions will be of the following type:
+
+> data FactProp = FactAtLine Int
+>               | FactResInvariant
+>   deriving (Show, Eq, Ord)
+
+The full set of propositions is `FactResInvariant`, plus `FactAtLine i` for
+every line `i` of the `fact` program:
+
+> factProps :: [FactProp]
+> factProps = FactResInvariant : [ FactAtLine i | i <- [0..Vec.length fact] ]
+
+We use the following mapping from `FactProp` to state predicates:
+
+> factPropPred :: FactProp -> Predicate (LineNumber, Env FactVar Int)
+> factPropPred (FactAtLine i) = atLine i
+> factPropPred FactResInvariant =
+>   atEnv $ var Res .== liftFun factorial (var I .- val 1)
+>   where factorial n = product [1..n]
+
+Now, we define `factTS` in terms of the above:
+
+> factTS :: Int -> TransitionSystem (LineNumber, Env FactVar Int) LineNumber FactProp
+> factTS n = progToTS initialEnvs factProps factPropPred fact
+>   where initialEnvs = [ Map.fromList [(N, i), (Res, 0), (I, 0)] | i <- [1..n] ]
+
+Let's check our loop invariant for `factTS` for all values of `n` from `1` to `20`:
+
+```haskell
+  > checkInvariant (atom (FactAtLine 1) .-> atom FactResInvariant) 20
+  Nothing
+```
 
 Here's a nice picture of `factTS` for `n = 4`. Each state's name is written in
 the format `lineNum: <n=value, res=value>`:
 
-![Transition system for the `fact` function with input `n = 4`](../images/fact.png){width=30% height=30%}
-
-We can easily check that this invariant holds throughout the program's
-execution, for any concrete `n`:
-
-```haskell
-  > checkInvariant (atom FactInvariant) (factTS 4)
-  Nothing
-  > checkInvariant (atom FactInvariant) (factTS 20)
-  Nothing
-```
+![Transition system for the `fact` function with input `n = 4`](../images/fact.png){width=100% height=100%}
 
 That's it for sequential programs
 --
