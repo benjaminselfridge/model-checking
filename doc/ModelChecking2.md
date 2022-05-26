@@ -27,6 +27,7 @@ check important properties.
 module ModelChecking2 where
 
 import ModelChecking1
+import Control.Applicative (liftA2)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Vector (Vector)
@@ -43,8 +44,9 @@ expressions and statements in our language constructs will *themselves*
 be functions which directly evaluate and modify (respectively) the
 environment.
 
-In our language, a program is a sequence of statements. There are two
-kinds of statements:
+Our language will be called `MIG`, which stands for `Modify`/`IfGoto`.
+In `MIG`, a program is a sequence of statements. There are two kinds of
+statements:
 
 1.  `Modify`: modify the global variable environment (e.g. assign a
     variable to a value)
@@ -52,9 +54,7 @@ kinds of statements:
     number
 
 The *global variable environment*, or just *environment*, is an
-assignment of values to a set of variables. It doesn't particularly
-matter what the variables and values are, so we'll abstract them with
-type variables `var` and `val`, respectively. The environment is going
+assignment of `val`ues to a set of `var`iables. The environment is going
 to be a `Map` from `var`s to `val`s:
 
 ``` {.haskell .literate}
@@ -100,14 +100,15 @@ goto :: LineNumber -> Stmt var val
 goto lineNum = IfGoto true lineNum
 ```
 
-Another occasinally useful is `noop`:
+Another occasionally useful statement is `noop`, which is implemented as
+a `Modify` that doesn't actually do anything:
 
 ``` {.haskell .literate}
 noop :: Stmt var val
 noop = Modify id
 ```
 
-A program is just a `Vector` of statements:
+A `MIG` program is just a `Vector` of statements:
 
 ``` {.haskell .literate}
 type Prog var val = Vector (Stmt var val)
@@ -116,9 +117,9 @@ type Prog var val = Vector (Stmt var val)
 ## The `Modify` statement
 
 In this section and the next section, we will define some helper
-functions that will make it easier to create readable statements in our
-language. In this section, we focus on `Modify`; in the next, we'll look
-at `IfGoto`.
+functions that will make it easier to create readable statements in
+`MIG`. In this section, we focus on `Modify`; in the next, we'll look at
+`IfGoto`.
 
 The `Modify` constructor takes a single argument, an `Effect`:
 
@@ -141,7 +142,7 @@ int x = y * 4;
 
 The left-hand side of the `=` is a variable, and the right-hand side is
 an *expression* that can be evaluated, given an environment that has a
-definition for the variable `y`. In our language, we could write the
+definition for the variable `y`. In `MIG`, we could write the
 corresponding `Modify` statement like so:
 
 ``` {.haskell}
@@ -181,9 +182,8 @@ infix 2 .=
 ```
 
 This allows us to create an `Effect`, which is a function, without
-writing an explicit lambda or defining the function in a `let` or
-`where` clause. Now, we can define the `x_equals_4_y` statement a bit
-more nicely:
+needing to use an explicit lambda expression that calls `Map.insert`.
+Now, we can define the `x_equals_4_y` statement a bit more nicely:
 
 ``` {.haskell}
 modify_stmt :: Stmt XY Int
@@ -193,17 +193,12 @@ modify_stmt = Modify (X .= (\env -> env Map.! Y * 4))
 This is better. However, the `Expr` we are binding `X` to is still
 defined in terms of a lambda expression and an explicit `Map.!`
 operator. We can do a bit better still by defining some more functions
-to build `Expr`s more cleanly. We'll create "atomic" expressions from
-variables and values, and combine expressions using numeric operators.
-We will also be able to "lift" ordinary functions into our language.
-This is made especially easy because we chose a shallow embedding
-approach.
+to build `Expr`s more cleanly.
 
 If `x :: var` is a variable, we can create a corresponding expression
 for `x`. In our representation, the *expression* for `x` will be a
 function that simply looks up `x` in the environment and returns its
-value. The function `var` "lifts" any variable to its corresponding
-expression.
+value.
 
 ``` {.haskell .literate}
 var :: Ord var => var -> Expr var val
@@ -213,48 +208,42 @@ var x env = env Map.! x
 If `c :: val` is a constant value, we can create a corresponding
 expression for `c`. In our representation, the *expression* for `c` will
 be a function that ignores the current environment and blindly returns
-the value `c`. The function `val` "lifts" a constant value to its
-corresponding expression.
+the value `c`.
 
 ``` {.haskell .literate}
 val :: val -> Expr var val
 val c _ = c
 ```
 
+``` {.haskell .literate}
+class AsExpr a var val where
+  asExpr :: a -> Expr var val
+```
+
 If `val` is a numeric type, we can lift the usual numeric operators to
-expressions:
+expressions. This can actually be accomplished by providing an orphan
+`Num` instance for functions:
 
 ``` {.haskell .literate}
-(.+) :: Num val => Expr var val -> Expr var val -> Expr var val
-(e1 .+ e2) env = e1 env + e2 env
-infixl 6 .+
+instance Num b => Num (a -> b) where
+  (+) = liftA2 (+)
+  (*) = liftA2 (*)
+  (-) = liftA2 (-)
+  abs = fmap abs
+  signum = fmap signum
+  fromInteger = const . fromInteger
+  negate = fmap negate
 ```
 
-``` {.haskell .literate}
-(.-) :: Num val => Expr var val -> Expr var val -> Expr var val
-(e1 .- e2) env = e1 env - e2 env
-infixl 6 .-
-```
-
-``` {.haskell .literate}
-(.*) :: Num val => Expr var val -> Expr var val -> Expr var val
-(e1 .* e2) env = e1 env * e2 env
-infixl 7 .*
-```
-
-Furthermore, if a function `f : val -> val` transforms values, we can
-lift `f` to a function that transforms expressions:
-
-``` {.haskell .literate}
-liftFun :: (val -> val) -> Expr var val -> Expr var val
-liftFun f e env = f (e env)
-```
+Since an `Expr var val` is just a function `Env var val -> val`, this
+means that if `val` has a `Num` instance, we have a corresponding
+instance for `Expr var val` that behaves in the way we'd expect.
 
 Now, we can rewrite our `int x = y * 4;` statement in a much nicer way:
 
 ``` {.haskell}
 modify_stmt :: Stmt XY Int
-modify_stmt = Modify (X .= var Y .* 4)
+modify_stmt = Modify (X .= var Y * 4)
 ```
 
 If we have *two* effects that we'd like to perform, one after another,
@@ -267,13 +256,15 @@ infixr 1 >:
 ```
 
 If `a` and `b` are effects, `a >: b` is the effect which results from
-first performing `a`, then performing `b`.
+first performing `a`, then performing `b`. This is useful when we wish
+to update two variables atomically, i.e. perform both updates in a
+single step of the program.
 
 ## The `IfGoto` statement
 
 In this section, we'll define a few helper functions to help us write
-`IfGoto` statements in a readable way. The `IfGoto` takes an
-*environment predicate* and a line number as arguments:
+`IfGoto` statements in a readable way. `IfGoto` takes an *environment
+predicate* and a line number as arguments:
 
 ``` {.haskell}
 IfGoto :: Predicate (Env var val) -> LineNumber -> Stmt var val
@@ -297,10 +288,11 @@ In C, we might see a conditional `goto` statement like this:
 if (x == 1 + y) goto label;
 ```
 
-Ideally the programmer doesn't use explicit `goto`s, but in our language
-it will be the only option for affecting control flow in our programs.
-In our language, assuming `label` refers to line 17, we can write the
-corresponding `IfGoto` statement like so:
+Ideally the programmer doesn't use explicit `goto`s, but in `MIG` it
+will be the only option for affecting control flow in our programs.
+Let's assume `label` refers to a specific line number, namely line 17 of
+the program. Then we can write the corresponding `IfGoto` statement like
+so:
 
 ``` {.haskell}
 if_goto_stmt :: Stmt XY Int
@@ -364,14 +356,17 @@ much nicer way:
 
 ``` {.haskell}
 if_goto_stmt :: Stmt XY Int
-if_goto_stmt = IfGoto (var X .== val 1 .+ var Y) 17
+if_goto_stmt = IfGoto (var X .== val 1 + var Y) 17
 ```
 
 ## Implementing factorial
 
-Now, let's implement the factorial function, just to illustrate how the
-different language constructs work. We're going to hand-translate this C
-function:
+To give you a simple example of how to program in this language, let's
+implement factorial. We won't do any model checking of this program;
+this is merely to give you (the reader) a concrete sense of how programs
+can be written in it.
+
+We're going to hand-translate this C function:
 
 ``` {.c}
 int fact(int n) {
@@ -399,8 +394,8 @@ fact :: Prog FactVar Int
 fact = Vec.fromList
   {- 0 -} [ Modify (Res .= val 1 >: I .= val 2)
   {- 1 -} , IfGoto (pnot (var I .<= var N)) 5
-  {- 2 -} ,   Modify (Res .= (var Res .* var I))
-  {- 3 -} ,   Modify (I   .= (var I   .+ val 1))
+  {- 2 -} ,   Modify (Res .= (var Res * var I))
+  {- 3 -} ,   Modify (I   .= (var I   + val 1))
   {- 4 -} ,   goto 1
   {- 5 -} , goto 5 -- halt
           ]
@@ -408,254 +403,6 @@ fact = Vec.fromList
 
 We don't have a separate `Halt` statement, so we model that with a
 `goto` statement that points to itself, infinitely looping.
-
-# From sequential programs to transition systems
-
-In order to model check programs, we'll need to be able to convert a
-program into a transition system. The basic idea will be that a state in
-the transition system will be a pair `(LineNumber, Env var val)`,
-consisting of the current line number and the current values of the
-program variables. Each state will have exactly one outgoing transition,
-which corresponds to executing the statement at the current line of the
-program and then going to the next line to be executed.
-
-The atomic propositional variables will be defined by the caller. The
-caller will provide a list of variables, along with a function mapping
-each variable to some predicate involving the current line number and
-global variable environment. Then, the label of each state will be the
-set of variables whose corresponding predicate is true at the current
-`(LineNumber, Env var val)` pair.
-
-The `action` type will just be `LineNumber`, corresponding to
-"performing the statement at the given line." As before, the `action` is
-just a name for each transition, and does not have any semantic content
-whatsoever.
-
-``` {.haskell .literate}
-progToTS :: [Env var val]
-         -> [ap]
-         -> (ap -> Predicate (LineNumber, Env var val))
-         -> Prog var val
-         -> TransitionSystem (LineNumber, Env var val) LineNumber ap
-progToTS initialEnvs aps apToPred prog = TransitionSystem
-```
-
-The first argument to this function, `initialEnvs`, is a list of
-possible initial environments for the program. Every program starts at
-line `0`. For each initial environment provided by the caller, there is
-a corresponding initial state in the transition system that starts the
-program at line `0` with that initial environment:
-
-``` {.haskell .literate}
-  { tsInitialStates = [ (0, env) | env <- initialEnvs ]
-```
-
-Given a state `s :: (LineNumber, Env var val)`, the label of `s` is the
-set of all atomic propositional variables (as supplied by the caller)
-whose corresponding environment predicate is satisified by `s`:
-
-``` {.haskell .literate}
-  , tsLabel = \s -> [ p | p <- aps, s |= apToPred p ]
-```
-
-Each state `(lineNum, env) :: (LineNumber, Env var val)` has a single
-outgoing transition. To determine what the transition should be, we
-first look up the statement at the current line number:
-
-``` {.haskell .literate}
-  , tsTransitions = \(lineNum, env) -> case prog Vec.! lineNum of
-```
-
-The `Modify` statement transitions to the next line, and modifies the
-environment by applying the given effect:
-
-``` {.haskell .literate}
-      Modify effect -> [(lineNum, (lineNum+1, effect env))]
-```
-
-The `IfGoto` statement tests the environment predicate; if it's true, we
-transition to the given line number, and if it's false, we transition to
-the next line number. In both cases, the global variable environment is
-left unchanged.
-
-``` {.haskell .literate}
-      IfGoto p lineNum'
-        | env |= p  -> [(lineNum, (lineNum' , env))]
-        | otherwise -> [(lineNum, (lineNum+1, env))]
-  }
-```
-
-## Atomic propositions
-
-When translating a program to a transition system, we need to define our
-set of atomic propositional variables, which amounts to identifying a
-few predicates about our state which we are interested in. We also need
-to map each variable to its corresponding predicate when we call
-`progToTS`. This map needs to be a function of type
-`ap -> Predicate (LineNumber, Env var val)`; that is, our atomic
-propositions will denote predicates that take the current line number
-into account as well as the global variable environment.
-
-The following "lifting" operators will be nice to have, as they will
-enable us to smoothly define such predicates:
-
-``` {.haskell .literate}
-liftL :: Predicate a -> Predicate (a, b)
-liftL p (a, _) = p a
-```
-
-``` {.haskell .literate}
-liftR :: Predicate b -> Predicate (a, b)
-liftR p (_, b) = p b
-```
-
-With these operators, we can lift a predicate about an `Env var val` to
-a predicate about a `(LineNumber, Env var val)` pair:
-
-``` {.haskell .literate}
-atEnv :: Predicate (Env var val) -> Predicate (a, Env var val)
-atEnv = liftR
-```
-
-Furthermore, we sometimes will wish to define invariants that only apply
-when we are at a specific line number, so the following function will be
-useful:
-
-``` {.haskell .literate}
-atLine :: LineNumber -> Predicate (LineNumber, a)
-atLine lineNum = liftL (== lineNum)
-```
-
-## Converting the factorial program to a transition system
-
-In converting a program to a transition system, we first need to choose:
-
-1)  The set of all possible initial environments
-2)  The set of all atomic propositional variables
-3)  How each atomic propositional variable maps to a *predicate* about
-    the current line number and environment
-
-In fact, these are the first three arguments of the `progToTS` function.
-The choices we make will depend on what kinds of properties we want to
-verify, and what the set of possible starting states we will want to
-consider.
-
-For our factorial program, the property we'll be interested in checking
-is a loop invariant which will hold at the beginning of the loop.
-Whenever the program is at line 1, the following formula should hold:
-
-    Res == factorial(I-1)
-
-In other words, the current value of `Res` should be the "product so
-far." We'd also like to check this loop invariant for not just one
-particular input value of `n`, but for a range of inputs.
-
-In light of these considerations, we'll making the following respective
-choices:
-
-1)  The set of possible initial environments will be the set of all
-    environments with `N = i` for all `i` between `1` and some maximum
-    integer `n`. (We'll initialize `Res` and `I` to `0` for
-    completeness, but we note that their initial values don't matter,
-    since the first line of the program sets their values.)
-
-2)  We will have two types of atomic propositional variables: ones that
-    indicate whether the current line number is a particular value, and
-    a single proposition that indicates whether the condition
-    `Res == factorial(I-1)` is true.
-
-3)  We will map the variables described in 2) to the corresponding
-    predicates about the current `(LineNumber, Env var val)` state in
-    the transition system.
-
-Our atomic propositions will be of the following type:
-
-``` {.haskell .literate}
-data FactProp = FactAtLine Int
-              | FactResInvariant
-  deriving (Show, Eq, Ord)
-```
-
-The full set of propositions is `FactResInvariant`, plus `FactAtLine i`
-for every line `i` of the `fact` program:
-
-``` {.haskell .literate}
-factProps :: [FactProp]
-factProps = FactResInvariant : [ FactAtLine i | i <- [0..Vec.length fact-1] ]
-```
-
-We use the following mapping from `FactProp` to state predicates:
-
-``` {.haskell .literate}
-factPropPred :: FactProp -> Predicate (LineNumber, Env FactVar Int)
-factPropPred (FactAtLine i) = atLine i
-factPropPred FactResInvariant =
-  atEnv $ var Res .== liftFun factorial (var I .- val 1)
-  where factorial n = product [1..n]
-```
-
-Now, we define `factTS` in terms of the above:
-
-``` {.haskell .literate}
-factTS :: Int -> TransitionSystem (LineNumber, Env FactVar Int) LineNumber FactProp
-factTS n = progToTS initialEnvs factProps factPropPred fact
-  where initialEnvs = [ Map.fromList [(N, i), (Res, 0), (I, 0)] | i <- [1..n] ]
-```
-
-Let's check our loop invariant for `factTS` for all values of `n` from
-`1` to `20`. First, let's see if `FactResInvariant` holds
-unconditionally:
-
-``` {.haskell}
-  > checkInvariant (atom FactResInvariant) (factTS 20)
-  Just ((0,fromList [(N,1),(I,0),(Res,0)]),Path {pathHead = (0,fromList [(N,1),(I,0),(Res,0)]), pathTail = []})
-```
-
-The invariant trivially fails at line 0, because `I` and `Res` haven't
-been initialized yet. Let's see if we can fix this by assuming we are
-not at line 0.
-
-``` {.haskell}
-  > checkInvariant (pnot (atom (FactAtLine 0)) .-> atom FactResInvariant) (factTS 20)
-  Just ((3,fromList [(N,2),(I,2),(Res,2)]),Path {pathHead = (0,fromList [(N,2),(I,0),(Res,0)]), pathTail = [(0,(1,fromList [(N,2),(I,2),(Res,1)])),(1,(2,fromList [(N,2),(I,2),(Res,1)])),(2,(3,fromList [(N,2),(I,2),(Res,2)]))]})
-```
-
-The invariant fails at line 3, because `Res` has been updated, but `I`
-has not been incremented. What we *really* care about is that the
-invariant holds at the beginning every loop iteration, which is at line
-1. So let's just check that whenever we are at line 1, the invariant
-holds.
-
-``` {.haskell}
-  > checkInvariant (atom (FactAtLine 1) .-> atom FactResInvariant) (factTS 20)
-  Nothing
-```
-
-## A note on sequential programs
-
-The language we have defined in this post is entirely *deterministic*;
-that is, for every state in the transition system derived from any
-program, there is exactly one outgoing transition. This means that the
-process of building a transition system is equivalent to *simulating*
-the program in question.
-
-We can see this easily by looking at a picture of `factTS 4`. Each
-state's name is written in the format `lineNum: <n=value, res=value>`:
-
-![Transition system for the `fact` function with inputs `n = 1` through
-`4`](../images/fact.png){width="100%" height="100%"}
-
-We can plainly see that the graph is just a collection of linear
-sequences of states. There is one sequence for every distinct initial
-environment we passed to the conversion function.
-
-This illustrates a basic limitation of *explicit state* model checking:
-one cannot prove that a property holds for *arbitrary* program inputs,
-unless the input space is finite and it is feasible to try every single
-input. In *symbolic state* model checking, one represents the states
-symbolically, which allows one to prove properties about all inputs,
-under certain conditions; however, that falls outside the scope of this
-series.
 
 # Parallel programs
 
@@ -684,38 +431,73 @@ other, and the processes can advance in any order.
 
 ## Example: Peterson's mutual exclusion algorithm
 
+Consider two processes, P0 and P1, which are running corresponding
+programs. Suppose that each program has a *critical section*, and if P0
+and P1 are every both in their critical sections, bad things can happen.
+The property that both processes cannot execute their critical sections
+simultaneously is called *mutual exclusion*.
+
+Peterson's algorithm is an elegant way to ensure mutual exclusion. It
+uses three variables: `Turn`, `Wait0`, and `Wait1`. Intuitively, the
+meaning of each variable is as follows:
+
+-   `Turn` is `False` it if is `P0`'s turn to enter its critical
+    section, and `True` if it is `P1`s turn.
+-   `Wait0` is `True` if `P0` wishes to enter its critical section or is
+    currently in its critical section, and `False` otherwise.
+-   `Wait1` is `True` if `P1` wishes to enter its critical section or is
+    currently in its critical section, and `False` otherwise.
+
+We implement Peterson's algorithm in our language as a parallel program
+with two processes. Each process is in an infinite loop, continually
+attempting to enter its own critical section. When a process wants to
+enter its critical section, it first sets its own `Wait` variable to
+`True`, and then it (somewhat counterintuitively) signals that it is the
+*other* process's turn. Then, before it enters its own critical section,
+it busy-waits until either the other process is not waiting, or its own
+turn has arrived.
+
 ``` {.haskell .literate}
-data PeteVar = X | B1 | B2 deriving (Show, Eq, Ord)
+data PeteVar = Turn | Wait0 | Wait1 deriving (Show, Eq, Ord)
+```
+
+``` {.haskell .literate}
+pete_0 :: Prog PeteVar Bool
+pete_0 = Vec.fromList
+  {- 0 -} [ Modify (Wait0 .= val True)
+  {- 1 -} , Modify (Turn .= val True)
+  {- 2 -} , IfGoto (var Turn .& var Wait1) 2
+  {- 3 -} , noop -- CRITICAL SECTION
+  {- 4 -} , Modify (Wait0 .= val False)
+  {- 5 -} , goto 0
+          ]
 ```
 
 ``` {.haskell .literate}
 pete_1 :: Prog PeteVar Bool
 pete_1 = Vec.fromList
-  {- 0 -} [ Modify (X .= val True >: B1 .= val True)
-  {- 1 -} , IfGoto (var X .& var B2) 1
-  {- 2 -} , noop -- CRITICAL SECTION
-  {- 3 -} , Modify (B1 .= val False)
-  {- 4 -} , goto 0
-          ]
-```
-
-``` {.haskell .literate}
-pete_2 :: Prog PeteVar Bool
-pete_2 = Vec.fromList
- {- 0 -} [ Modify (X .= val False >: B2 .= val True)
- {- 1 -} , IfGoto (pnot (var X) .& var B1) 1
- {- 2 -} , noop -- CRITICAL SECTION
- {- 3 -} , Modify (B2 .= val False)
- {- 4 -} , goto 0
+ {- 0 -} [ Modify (Wait1 .= val True)
+ {- 1 -} , Modify (Turn .= val False)
+ {- 2 -} , IfGoto (pnot (var Turn) .& var Wait0) 2
+ {- 3 -} , noop -- CRITICAL SECTION
+ {- 4 -} , Modify (Wait1 .= val False)
+ {- 5 -} , goto 0
          ]
 ```
 
 ``` {.haskell .literate}
 pete :: ParProg PeteVar Bool
-pete = Vec.fromList [ pete_1, pete_2 ]
+pete = Vec.fromList [ pete_0, pete_1 ]
 ```
 
-# From parallel programs to transition systems
+It is possible to reason through why this solution works, and even to
+write a formal proof that both processes cannot be at line 3
+simultaneously. However, by converting this parallel program to a
+transition system, we can automatically check that Peterson's algorithm
+ensures mutual exclusion. In the next section, we discuss how to perform
+this conversion, and then apply it to this algorithm.
+
+## From parallel programs to transition systems
 
 The conversion from a sequential program to a transition system was
 straightforward, and the result was entirely deterministic; i.e. every
@@ -810,7 +592,7 @@ allProcAtLine parProg =
 ``` {.haskell .literate}
 procAtLinePred :: ProcAtLine -> Predicate (ParProgState var val)
 procAtLinePred (ProcAtLine procId lineNum) =
-  liftL $ \lineNums -> lineNums Vec.! procId == lineNum
+  \(lineNums, _) -> lineNums Vec.! procId == lineNum
 ```
 
 ## Checking Peterson's mutex algorithm
@@ -818,8 +600,13 @@ procAtLinePred (ProcAtLine procId lineNum) =
 ``` {.haskell .literate}
 peteTS :: TransitionSystem (ParProgState PeteVar Bool) (ProcId, LineNumber) ProcAtLine
 peteTS = parProgToTS [initialEnv] (allProcAtLine pete) procAtLinePred pete
-  where initialEnv = Map.fromList [ (X, False), (B1, False), (B2, False) ]
+  where initialEnv = Map.fromList [ (Turn, False), (Wait0, False), (Wait1, False) ]
 ```
 
 ![Transition system for the `pete`
 program](../images/peterson.png){width="100%" height="100%"}
+
+``` {.haskell}
+  > checkInvariant (pnot (atom (ProcAtLine 0 2) .& atom (ProcAtLine 1 2))) peteTS
+  Nothing
+```

@@ -123,6 +123,6 @@ instance GV.Labellable (LineNumber, Env FactVar Int) where
 instance GV.Labellable (ParProgState PeteVar Bool) where
   toLabelValue (lineNums, env) = GV.toLabelValue $
     "(" ++ intercalate "," (show <$> toList lineNums) ++ "): " ++
-    "<x=" ++ show (env ! X ) ++ ", " ++
-    "b1=" ++ show (env ! B1) ++ ", " ++
-    "b2=" ++ show (env ! B2) ++ ">"
+    "<turn=" ++ show (env ! Turn ) ++ ", " ++
+    "wait0=" ++ show (env ! Wait0) ++ ", " ++
+    "wait1=" ++ show (env ! Wait1) ++ ">"
