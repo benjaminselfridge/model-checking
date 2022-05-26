@@ -10,10 +10,11 @@ import Control.Monad (void)
 import qualified Data.GraphViz as GV
 import qualified Data.GraphViz.Attributes.Complete as GV
 import Data.Graph.Inductive.Graph (Node)
+import Data.List (intercalate)
 import Data.Map ((!))
 import Data.Maybe (fromJust)
 import Data.String
-import Data.Vector (Vector)
+import Data.Vector (Vector, toList)
 import qualified Data.Vector as Vec
 
 class ActionLabel l where
@@ -113,7 +114,15 @@ instance GV.Labellable Color where
 --     "b2=" ++ show (state ! B2) ++ ">"
 
 instance GV.Labellable (LineNumber, Env FactVar Int) where
-  toLabelValue (lineNum, state) = GV.toLabelValue $
+  toLabelValue (lineNum, env) = GV.toLabelValue $
     show lineNum ++ ": " ++
-    "<n="  ++ show (state ! N  ) ++ ", " ++
-    "res=" ++ show (state ! Res) ++ ">"
+    "<n="  ++ show (env ! N  ) ++ ", " ++
+    "i="   ++ show (env ! I  ) ++ ", " ++
+    "res=" ++ show (env ! Res) ++ ">"
+
+instance GV.Labellable (ParProgState PeteVar Bool) where
+  toLabelValue (lineNums, env) = GV.toLabelValue $
+    "(" ++ intercalate "," (show <$> toList lineNums) ++ "): " ++
+    "<x=" ++ show (env ! X ) ++ ", " ++
+    "b1=" ++ show (env ! B1) ++ ", " ++
+    "b2=" ++ show (env ! B2) ++ ">"
