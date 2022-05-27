@@ -4,22 +4,22 @@ title: "Model Checking in Haskell, Part 2: From Programs to Transition
 ---
 
 In the [previous post](ModelChecking1.html), we introduced transition
-systems, which are directed graphs that capture how the state of a
-system can evolve through time. Each state in the graph was labeled with
-a *true-set*, the set of all atomic propositions which are true in that
-state. We explored how to build logical propositions in terms of the
-atomic propositions of the state labels, and how to check that such a
-proposition is an *invariant* of the transition system. By using an
-off-the-shelf graph search algorithm, we discovered all reachable states
-and evaluated the proposition at each state.
+systems, which are directed graphs that capture properties of the state
+of a system as it evolves through time. Each state in the graph was
+labeled with a *true-set*, the set of all atomic propositions which are
+true in that state. We explored how to build logical propositions in
+terms of the atomic propositions of the state labels, and how to check
+that such a proposition is an *invariant* of the transition system. By
+using an off-the-shelf graph search algorithm, we discovered all
+reachable states and evaluated the proposition at each state.
 
 In this post, we will take a look at how transition systems can be
 derived from computer programs. We will develop a very simple imperative
 programming language, and then we will write a function that converts
-programs written in this language to transition systems. We'll also look
-at a few examples of such programs, and we'll show how to apply our
-`checkInvariant` function from the previous post to these examples to
-check important properties.
+parallel programs written in this language to transition systems.
+Finally, we'll use this language to implement Peterson's algorithm for
+mutual exclusion, and we'll use the `checkInvariant` function from the
+previous post to ensure that it is correct.
 
 # A simple imperative programming language
 
@@ -77,7 +77,7 @@ We'll use `Int` as a sensible type for our line numbers:
 type LineNumber = Int
 ```
 
-A statement in MIG either modifies the current environment, or
+A statement in `MIG` either modifies the current environment, or
 conditionally goes to the given line number:
 
 ``` {.haskell .literate}
@@ -344,12 +344,12 @@ much nicer way:
 
 ``` {.haskell}
 if_goto_stmt :: Stmt XY Int
-if_goto_stmt = IfGoto (var X .== val 1 + var Y) 17
+if_goto_stmt = IfGoto (var X .== 1 + var Y) 17
 ```
 
 ## Implementing factorial
 
-To give you a simple example of how to program in MIG, let's implement
+To give you a simple example of how to program in `MIG`, let's implement
 factorial. We won't do any model checking of this program; this is
 merely to give you (the reader) a concrete sense of how programs can be
 written in it.
@@ -367,8 +367,7 @@ int fact(int n) {
 }
 ```
 
-into a MIG program. The program has three variables: `n`, 'i', and
-`res`:
+into a `MIG` program. The program has three variables:
 
 ``` {.haskell .literate}
 data FactVar = N | I | Res deriving (Show, Eq, Ord)
@@ -380,10 +379,10 @@ comments to the left of each statement):
 ``` {.haskell .literate}
 fact :: Prog FactVar Int
 fact = Vec.fromList
-  {- 0 -} [ Modify (Res .= val 1 >: I .= val 2)
+  {- 0 -} [ Modify (Res .= 1 >: I .= 2)
   {- 1 -} , IfGoto (pnot (var I .<= var N)) 5
-  {- 2 -} ,   Modify (Res .= (var Res * var I))
-  {- 3 -} ,   Modify (I   .= (var I   + val 1))
+  {- 2 -} ,   Modify (Res .= var Res * var I)
+  {- 3 -} ,   Modify (I   .= var I   +     1)
   {- 4 -} ,   goto 1
   {- 5 -} , goto 5 -- halt
           ]
@@ -396,9 +395,9 @@ We don't have a separate `Halt` statement, so we model that with a
 
 In this section, we will examine the problem of model checking multiple
 programs running in parallel, which all have access to the same global
-variable environment. We will use MIG express each individual program,
-and then we will define a function to convert a parallel program into a
-transition system.
+variable environment. We will use `MIG` to express each individual
+program, and then we will define a function to convert a parallel
+program into a transition system.
 
 A *parallel program* is just a `Vector` of sequential programs with a
 shared environment:
@@ -427,7 +426,7 @@ any order.
 
 Consider two processes, P0 and P1, which are running corresponding
 programs. Suppose that each program has a *critical section*, and if P0
-and P1 are every both in their critical sections, bad things can happen.
+and P1 are ever both in their critical sections, bad things can happen.
 The property that both processes cannot execute their critical sections
 simultaneously is called *mutual exclusion*.
 
@@ -441,19 +440,19 @@ data PeteVar = Turn | Wait0 | Wait1 deriving (Show, Eq, Ord)
 Intuitively, the meaning of each variable is as follows:
 
 -   `Turn` is `False` it if is `P0`'s turn to enter its critical
-    section, and `True` if it is `P1`s turn.
+    section, and `True` if it is `P1`'s turn.
 -   `Wait0` is `True` if `P0` wishes to enter its critical section or is
     currently in its critical section, and `False` otherwise.
 -   `Wait1` is `True` if `P1` wishes to enter its critical section or is
     currently in its critical section, and `False` otherwise.
 
-We implement Peterson's algorithm in MIG as a parallel program with two
-processes. Each process is in an infinite loop, continually attempting
-to enter its own critical section. When a process wants to enter its
-critical section, it first sets its own `Wait` variable to `True`, and
-then it (somewhat counterintuitively) signals that it is the *other*
-process's turn. Then, before it enters its own critical section, it
-busy-waits until either the other process is not waiting, or its own
+We implement Peterson's algorithm in `MIG` as a parallel program with
+two processes. Each process is in an infinite loop, continually
+attempting to enter its own critical section. When a process wants to
+enter its critical section, it first sets its own `Wait` variable to
+`True`, and then it (somewhat counterintuitively) signals that it is the
+*other* process's turn. Then, before it enters its own critical section,
+it busy-waits until either the other process is not waiting, or its own
 turn has arrived. Finally, when the critical section is complete, the
 process sets its `Wait` variable to `False`, indicating it has exited
 its critical section, and the other process is free to enter theirs. The
@@ -550,8 +549,8 @@ system with every process starting at line 0:
   { tsInitialStates = [(Vec.replicate (Vec.length parProg) 0, env) | env <- initialEnvs]
 ```
 
-As for sequential programs, states are labeled by the atomic
-propositional variables whose corresponding predicates they satisfy:
+States are labeled by the atomic propositional variables whose
+corresponding predicates they satisfy:
 
 ``` {.haskell .literate}
   , tsLabel = \s -> [ p | p <- aps, s |= apToPred p ]
@@ -568,19 +567,20 @@ process.
   where t env lineNums procId =
           let lineNum = lineNums Vec.! procId
               process = parProg Vec.! procId
+              action = (procId, lineNum)
           in case process Vec.! lineNum of
             Modify effect ->
-              ((procId, lineNum), (lineNums Vec.// [(procId, lineNum+1)], effect env))
+              (action, (lineNums Vec.// [(procId, lineNum+1)], effect env))
             IfGoto p lineNum'
-              | env |= p  -> ((procId, lineNum), (lineNums Vec.// [(procId, lineNum' )], env))
-              | otherwise -> ((procId, lineNum), (lineNums Vec.// [(procId, lineNum+1)], env))
+              | env |= p  -> (action, (lineNums Vec.// [(procId, lineNum' )], env))
+              | otherwise -> (action, (lineNums Vec.// [(procId, lineNum+1)], env))
 ```
 
 ## Checking Peterson's algorithm
 
-The property we would like to hold about Peterson's algorithm is simple:
-that both processes are never in their critical sections simultaneously.
-To ensure that this is true, we use the following type for the atomic
+The correctness property for Peterson's algorithm is simple: both
+processes should never be in their critical sections simultaneously. To
+ensure that this is true, we use the following type for the atomic
 propositional variables:
 
 ``` {.haskell .literate}
@@ -599,9 +599,9 @@ procAtLinePred (ProcAtLine procId lineNum) =
 ```
 
 In order to call `peteTS`, we also need to collect all of the atomic
-propositional variables. We need `ProcAtLine procId lineNum` for every
-valid `(ProcId, LineNumber)` pair. We can collect all such pairs for an
-arbitrary `ParProg` with the following function:
+propositional variables. These will be `ProcAtLine procId lineNum` for
+every valid `(ProcId, LineNumber)` pair. We can collect all such pairs
+for an arbitrary `ParProg` with the following function:
 
 ``` {.haskell .literate}
 enumProcAtLine :: ParProg var val -> [ProcAtLine]
@@ -671,14 +671,14 @@ bad_pete :: ParProg PeteVar Bool
 bad_pete = Vec.fromList [ bad_pete_0, bad_pete_1 ]
 ```
 
-The naming of these programs probably tips you off about the outcome of
-our little experiment.
-
 ``` {.haskell .literate}
 bad_peteTS :: TransitionSystem (ParProgState PeteVar Bool) (ProcId, LineNumber) ProcAtLine
 bad_peteTS = parProgToTS [initialEnv] (enumProcAtLine bad_pete) procAtLinePred bad_pete
   where initialEnv = Map.fromList [ (Turn, False), (Wait0, False), (Wait1, False) ]
 ```
+
+The naming of these programs probably tips you off about the outcome of
+our little experiment. Let's try it:
 
 ``` {.haskell}
   > checkInvariant (pnot (atom (ProcAtLine 0 3) .& atom (ProcAtLine 1 3))) bad_peteTS
@@ -723,7 +723,7 @@ indicating it is P0's turn to enter the critical section. Then, P0 sets
 it to `True`, indicating it is P1's turn. Then, at c, P0 sets `Wait0` to
 `True`, indicating it wishes to enter. At line d, P0 enters its critical
 section even though `Turn` is `True`, because `Wait1` is still `False`.
-Then, P1 is able to enter *it's* critical section, because `Turn` is
+Then, P1 is able to enter *its* critical section, because `Turn` is
 `True`.
 
 We see that it *really matters* that the `Wait` variables are updated
@@ -732,16 +732,15 @@ does not work.
 
 ## What's next?
 
-In this post, we showed how the basic idea of model checking can be
-applied to a real-world program to prove something valuable and
-non-trivial. Peterson's algorithm isn't *too* complicated, but it's not
-easy to see why it's correct at first glance. We saw that by translating
-it to a transition system, we could exhaustively explore the reachable
-state space, and found that it was impossible to violated the desired
-invariant. When we modified the program in a subtle but significant way,
-we discovered that the invariant failed.. Furthermore, the model
-checking approach discovered a counterexample that helped us to
-understand *why* it failed.
+In this post, we applied model checking to a real-world program and
+proved something valuable and non-trivial. Peterson's algorithm isn't
+*too* complicated, but it's not straightforward to see why it's correct
+at first glance. We saw that by translating it to a transition system,
+we could exhaustively explore the reachable state space, and found that
+it was impossible to violate the desired invariant. When we modified the
+program slightly, we discovered that the invariant failed. Furthermore,
+the model checking approach discovered a counterexample that helped us
+to understand *why* it failed.
 
 So far in this series, the only properties we have explored and checked
 are *invariants*. However, there are some properties that cannot be
