@@ -37,12 +37,13 @@ import Data.Void
 
 In this section, we'll define a simple, Turing-complete imperative
 language with variable assignments and conditional gotos. The language
-will be implemented as a *shallowly-embedded domain-specific language
-(eDSL)* in Haskell; we won't be writing a lexer or parser, and we won't
-even be writing an expression or statement evaluator, because
-expressions and statements in our language constructs will *themselves*
-be functions which directly evaluate and modify (respectively) the
-environment.
+will be implemented as a *embedded domain-specific language (eDSL)* in
+Haskell. The embedding will be (mostly) shallow. We will use Haskell
+functions to represent modifications to the state of the program
+variables and predicates about the state (which affect control flow).
+However, we will not allow these functions to modify or query the
+current line number in the program; that bit will be deeply embedded in
+the language AST.
 
 Our language will be called `MIG`, which stands for `Modify`/`IfGoto`.
 In `MIG`, a program is a sequence of statements. There are two kinds of
@@ -76,7 +77,7 @@ We'll use `Int` as a sensible type for our line numbers:
 type LineNumber = Int
 ```
 
-A statement in our language either modifies the current environment, or
+A statement in MIG either modifies the current environment, or
 conditionally goes to the given line number:
 
 ``` {.haskell .literate}
@@ -183,7 +184,7 @@ infix 2 .=
 
 This allows us to create an `Effect`, which is a function, without
 needing to use an explicit lambda expression that calls `Map.insert`.
-Now, we can define the `x_equals_4_y` statement a bit more nicely:
+Now, we can define the `modify_stmt` statement a bit more nicely:
 
 ``` {.haskell}
 modify_stmt :: Stmt XY Int
@@ -213,11 +214,6 @@ the value `c`.
 ``` {.haskell .literate}
 val :: val -> Expr var val
 val c _ = c
-```
-
-``` {.haskell .literate}
-class AsExpr a var val where
-  asExpr :: a -> Expr var val
 ```
 
 If `val` is a numeric type, we can lift the usual numeric operators to
@@ -339,14 +335,6 @@ infix 4 .>=
 infix 4 .>
 ```
 
-We can also lift predicates about `val`s to environment predicates by
-supplying them with an expression:
-
-``` {.haskell .literate}
-liftPred :: Predicate val -> Expr var val -> Predicate (Env var val)
-liftPred f e env = f (e env)
-```
-
 Also note that we can combine predicates using the boolean operators
 `.&`, `.|`, `pnot`, and `.->` as defined in the previous post; these
 enable us to "build up" larger predicates out of smaller ones.
@@ -361,10 +349,10 @@ if_goto_stmt = IfGoto (var X .== val 1 + var Y) 17
 
 ## Implementing factorial
 
-To give you a simple example of how to program in this language, let's
-implement factorial. We won't do any model checking of this program;
-this is merely to give you (the reader) a concrete sense of how programs
-can be written in it.
+To give you a simple example of how to program in MIG, let's implement
+factorial. We won't do any model checking of this program; this is
+merely to give you (the reader) a concrete sense of how programs can be
+written in it.
 
 We're going to hand-translate this C function:
 
@@ -379,8 +367,8 @@ int fact(int n) {
 }
 ```
 
-into a program written in the above, two-statement language. The program
-has three variables: `n`, 'i', and `res`:
+into a MIG program. The program has three variables: `n`, 'i', and
+`res`:
 
 ``` {.haskell .literate}
 data FactVar = N | I | Res deriving (Show, Eq, Ord)
@@ -408,12 +396,11 @@ We don't have a separate `Halt` statement, so we model that with a
 
 In this section, we will examine the problem of model checking multiple
 programs running in parallel, which all have access to the same global
-variable environment. We will use the language developed thus far to
-express each individual program, and then we will define a function to
-convert a *parallel* program (which is just a collection of sequential
-programs) into a transition system.
+variable environment. We will use MIG express each individual program,
+and then we will define a function to convert a parallel program into a
+transition system.
 
-A *parallel program* is just an array of sequential programs with a
+A *parallel program* is just a `Vector` of sequential programs with a
 shared environment:
 
 ``` {.haskell .literate}
@@ -421,13 +408,20 @@ type ParProg var val = Vector (Prog var val)
 ```
 
 We will use the term *process* to denote a sequential program that is
-part of a larger parallel program. To "run" a parallel program, we first
-start each process at line 0. Then, we arbitrarily pick which process
-will execute next, and we execute that process's current statement,
-updating the global variable environment and/or that process's current
-line number. This type of parallel execution model is called
-*interleaving*, because each process advances independently of the
-other, and the processes can advance in any order.
+part of a larger parallel program. The *process id* of a particular
+process is just the corresponding index into this vector.
+
+``` {.haskell .literate}
+type ProcId = Int
+```
+
+To "run" a parallel program, we first start each process at line 0.
+Then, we arbitrarily pick which process will execute next, and we
+execute that process's current statement, updating the global variable
+environment and/or that process's current line number. This type of
+parallel execution model is called *interleaving*, because each process
+advances independently of the other, and the processes can advance in
+any order.
 
 ## Example: Peterson's mutual exclusion algorithm
 
@@ -438,8 +432,13 @@ The property that both processes cannot execute their critical sections
 simultaneously is called *mutual exclusion*.
 
 Peterson's algorithm is an elegant way to ensure mutual exclusion. It
-uses three variables: `Turn`, `Wait0`, and `Wait1`. Intuitively, the
-meaning of each variable is as follows:
+uses three variables: `Turn`, `Wait0`, and `Wait1`.
+
+``` {.haskell .literate}
+data PeteVar = Turn | Wait0 | Wait1 deriving (Show, Eq, Ord)
+```
+
+Intuitively, the meaning of each variable is as follows:
 
 -   `Turn` is `False` it if is `P0`'s turn to enter its critical
     section, and `True` if it is `P1`s turn.
@@ -448,18 +447,18 @@ meaning of each variable is as follows:
 -   `Wait1` is `True` if `P1` wishes to enter its critical section or is
     currently in its critical section, and `False` otherwise.
 
-We implement Peterson's algorithm in our language as a parallel program
-with two processes. Each process is in an infinite loop, continually
-attempting to enter its own critical section. When a process wants to
-enter its critical section, it first sets its own `Wait` variable to
-`True`, and then it (somewhat counterintuitively) signals that it is the
-*other* process's turn. Then, before it enters its own critical section,
-it busy-waits until either the other process is not waiting, or its own
-turn has arrived.
-
-``` {.haskell .literate}
-data PeteVar = Turn | Wait0 | Wait1 deriving (Show, Eq, Ord)
-```
+We implement Peterson's algorithm in MIG as a parallel program with two
+processes. Each process is in an infinite loop, continually attempting
+to enter its own critical section. When a process wants to enter its
+critical section, it first sets its own `Wait` variable to `True`, and
+then it (somewhat counterintuitively) signals that it is the *other*
+process's turn. Then, before it enters its own critical section, it
+busy-waits until either the other process is not waiting, or its own
+turn has arrived. Finally, when the critical section is complete, the
+process sets its `Wait` variable to `False`, indicating it has exited
+its critical section, and the other process is free to enter theirs. The
+process then loops back to the beginning, and again attempts to enter
+its critical section.
 
 ``` {.haskell .literate}
 pete_0 :: Prog PeteVar Bool
@@ -476,13 +475,13 @@ pete_0 = Vec.fromList
 ``` {.haskell .literate}
 pete_1 :: Prog PeteVar Bool
 pete_1 = Vec.fromList
- {- 0 -} [ Modify (Wait1 .= val True)
- {- 1 -} , Modify (Turn .= val False)
- {- 2 -} , IfGoto (pnot (var Turn) .& var Wait0) 2
- {- 3 -} , noop -- CRITICAL SECTION
- {- 4 -} , Modify (Wait1 .= val False)
- {- 5 -} , goto 0
-         ]
+  {- 0 -} [ Modify (Wait1 .= val True)
+  {- 1 -} , Modify (Turn .= val False)
+  {- 2 -} , IfGoto (pnot (var Turn) .& var Wait0) 2
+  {- 3 -} , noop -- CRITICAL SECTION
+  {- 4 -} , Modify (Wait1 .= val False)
+  {- 5 -} , goto 0
+          ]
 ```
 
 ``` {.haskell .literate}
@@ -499,50 +498,53 @@ this conversion, and then apply it to this algorithm.
 
 ## From parallel programs to transition systems
 
-The conversion from a sequential program to a transition system was
-straightforward, and the result was entirely deterministic; i.e. every
-state in the system had exactly one outgoing transition, corresponding
-to executing the current line of the program. For a parallel program,
-this is no longer the case, because at any given moment in time, *any*
-of the processes might execute their current line.
-
-A state in such a transition system will be a pair
-`(Vector LineNumber, Env var val)`. The first element of this pair is a
-vector containing the current line number of each individual process.
-The second element is the global variable environment. Note that
-although we have a separate line number for each process, we do *not*
-have a separate environment; each process shares the global variable
+In order to model check a parallel program, we first convert such a
+program into a transition system. The basic idea for the conversion will
+be that a state in the transition system will be a pair
+`(Vector LineNumber, Env var val)`, consisting of the current line
+number of each process, and the current values of the global variable
 environment.
 
-As for sequential programs, the atomic propositions will be defined by
-the caller, and will be mapped to predicates about the current state in
-the transition system. Also, the `action` will be a pair
-`(ProcId, LineNumber)`, indicating that a given transition was performed
-by executing a particular line of a particular process.
-
-``` {.haskell .literate}
-type ProcId = Int
-```
+Every state `(lineNums, env)` will have exactly `Vec.length lineNums`
+outgoing transitions, each corresponding to executing the current line
+of one of the running processes.
 
 ``` {.haskell .literate}
 type ParProgState var val = (Vector LineNumber, Env var val)
 ```
 
+What should the set of atomic propositional variables be for the
+transition system of a program? Instead of choosing this for all
+programs, we defer this choice to the caller. The caller will provide a
+list of atomic propositional variables, along with a function which maps
+each variable to a *state predicate*, i.e. a
+`Predicate (ParProgState var val)`. Then, the label of each state will
+be the set of variables whose corresponding predicate is true about the
+current state.
+
+The `action` type will just be a `(ProcId, LineNumber)` pair,
+corresponding to "performing the statement at the given line of the
+given process." As in the previous post, the `action` is just a name for
+each transition, and does not have any semantic content whatsoever.
+
+Let's define `parProgToTS`, which converts a parallel program to a
+transition system:
+
 ``` {.haskell .literate}
 parProgToTS :: [Env var val]
             -> [ap]
-            -> (ap -> Predicate (Vector LineNumber, Env var val))
+            -> (ap -> Predicate (ParProgState var val))
             -> ParProg var val
-            -> TransitionSystem (Vector LineNumber, Env var val) (ProcId, LineNumber) ap
+            -> TransitionSystem (ParProgState var val) (ProcId, LineNumber) ap
 parProgToTS initialEnvs aps apToPred parProg = TransitionSystem
 ```
 
-As for sequential programs, `initialEnvs` is a list of all initial
-environments we are considering, `aps` is the complete list of atomic
-propositional variables, and `apToPred` maps each atomic propositional
-variable to its corresponding state predicate. For each initial
-environment provided by the caller, there is a corresponding initial
-state in the transition system with every process starting at line 0:
+The `initialEnvs` argument is a list of all initial environments we are
+considering. `aps` is the complete list of atomic propositional
+variables, and `apToPred` maps each atomic propositional variable to its
+corresponding state predicate. For each initial environment provided by
+the caller, there is a corresponding initial state in the transition
+system with every process starting at line 0:
 
 ``` {.haskell .literate}
   { tsInitialStates = [(Vec.replicate (Vec.length parProg) 0, env) | env <- initialEnvs]
@@ -574,20 +576,21 @@ process.
               | otherwise -> ((procId, lineNum), (lineNums Vec.// [(procId, lineNum+1)], env))
 ```
 
-The following predicate is useful for asserting that a particular
-process is at a particular line:
+## Checking Peterson's algorithm
+
+The property we would like to hold about Peterson's algorithm is simple:
+that both processes are never in their critical sections simultaneously.
+To ensure that this is true, we use the following type for the atomic
+propositional variables:
 
 ``` {.haskell .literate}
 data ProcAtLine = ProcAtLine ProcId LineNumber
   deriving (Show, Eq, Ord)
 ```
 
-``` {.haskell .literate}
-allProcAtLine :: ParProg var val -> [ProcAtLine]
-allProcAtLine parProg =
-  [ ProcAtLine procId lineNum | procId  <- [0..Vec.length parProg - 1]
-                              , lineNum <- [0..Vec.length (parProg Vec.! procId) - 1] ]
-```
+`ProcAtLine procId lineNum` represents the predicate that "process
+`procId` is currently at line `lineNum`." This is codified by the
+following function:
 
 ``` {.haskell .literate}
 procAtLinePred :: ProcAtLine -> Predicate (ParProgState var val)
@@ -595,18 +598,156 @@ procAtLinePred (ProcAtLine procId lineNum) =
   \(lineNums, _) -> lineNums Vec.! procId == lineNum
 ```
 
-## Checking Peterson's mutex algorithm
+In order to call `peteTS`, we also need to collect all of the atomic
+propositional variables. We need `ProcAtLine procId lineNum` for every
+valid `(ProcId, LineNumber)` pair. We can collect all such pairs for an
+arbitrary `ParProg` with the following function:
+
+``` {.haskell .literate}
+enumProcAtLine :: ParProg var val -> [ProcAtLine]
+enumProcAtLine parProg =
+  [ ProcAtLine procId lineNum | procId  <- [0..Vec.length parProg - 1]
+                              , lineNum <- [0..Vec.length (parProg Vec.! procId) - 1] ]
+```
+
+Now, we can define the transition system for the `pete` program as
+follows:
 
 ``` {.haskell .literate}
 peteTS :: TransitionSystem (ParProgState PeteVar Bool) (ProcId, LineNumber) ProcAtLine
-peteTS = parProgToTS [initialEnv] (allProcAtLine pete) procAtLinePred pete
+peteTS = parProgToTS [initialEnv] (enumProcAtLine pete) procAtLinePred pete
   where initialEnv = Map.fromList [ (Turn, False), (Wait0, False), (Wait1, False) ]
 ```
 
-![Transition system for the `pete`
-program](../images/peterson.png){width="100%" height="100%"}
+Note that there is only one initial environment; all three variables are
+initially `False`.
+
+The critical section occurs at line 3 in both processes, so the property
+that both processes are not simultaneously in their critical sections is
+stated as follows:
 
 ``` {.haskell}
-  > checkInvariant (pnot (atom (ProcAtLine 0 2) .& atom (ProcAtLine 1 2))) peteTS
+pnot (atom (ProcAtLine 0 3) .& atom (ProcAtLine 1 3))
+```
+
+Let's check that this property is an invariant for `peteTS` transition
+system:
+
+``` {.haskell}
+  > checkInvariant (pnot (atom (ProcAtLine 0 3) .& atom (ProcAtLine 1 3))) peteTS
   Nothing
 ```
+
+Glancing back at each process in Peterson's algorithm, we see that the
+assignment to the `Wait` variable occurs *before* the assignment to
+`Turn`. What happens if we swap the two? Will our property still hold?
+
+``` {.haskell .literate}
+bad_pete_0 :: Prog PeteVar Bool
+bad_pete_0 = Vec.fromList
+  {- 0 -} [ Modify (Turn .= val True)
+  {- 1 -} , Modify (Wait0 .= val True)
+  {- 2 -} , IfGoto (var Turn .& var Wait1) 2
+  {- 3 -} , noop -- CRITICAL SECTION
+  {- 4 -} , Modify (Wait0 .= val False)
+  {- 5 -} , goto 0
+          ]
+```
+
+``` {.haskell .literate}
+bad_pete_1 :: Prog PeteVar Bool
+bad_pete_1 = Vec.fromList
+  {- 0 -} [ Modify (Turn .= val False)
+  {- 1 -} , Modify (Wait1 .= val True)
+  {- 2 -} , IfGoto (pnot (var Turn) .& var Wait0) 2
+  {- 3 -} , noop -- CRITICAL SECTION
+  {- 4 -} , Modify (Wait1 .= val False)
+  {- 5 -} , goto 0
+          ]
+```
+
+``` {.haskell .literate}
+bad_pete :: ParProg PeteVar Bool
+bad_pete = Vec.fromList [ bad_pete_0, bad_pete_1 ]
+```
+
+The naming of these programs probably tips you off about the outcome of
+our little experiment.
+
+``` {.haskell .literate}
+bad_peteTS :: TransitionSystem (ParProgState PeteVar Bool) (ProcId, LineNumber) ProcAtLine
+bad_peteTS = parProgToTS [initialEnv] (enumProcAtLine bad_pete) procAtLinePred bad_pete
+  where initialEnv = Map.fromList [ (Turn, False), (Wait0, False), (Wait1, False) ]
+```
+
+``` {.haskell}
+  > checkInvariant (pnot (atom (ProcAtLine 0 3) .& atom (ProcAtLine 1 3))) bad_peteTS
+  Just (([3,3],fromList [(Turn,True),(Wait0,True),(Wait1,True)]),Path {pathHead = ([0,0],fromList [(Turn,False),(Wait0,False),(Wait1,False)]), pathTail = [((0,0),([1,0],fromList [(Turn,True),(Wait0,False),(Wait1,False)])),((0,1),([2,0],fromList [(Turn,True),(Wait0,True),(Wait1,False)])),((0,2),([3,0],fromList [(Turn,True),(Wait0,True),(Wait1,False)])),((0,3),([4,0],fromList [(Turn,True),(Wait0,True),(Wait1,False)])),((0,4),([5,0],fromList [(Turn,True),(Wait0,False),(Wait1,False)])),((0,5),([0,0],fromList [(Turn,True),(Wait0,False),(Wait1,False)])),((1,0),([0,1],fromList [(Turn,False),(Wait0,False),(Wait1,False)])),((0,0),([1,1],fromList [(Turn,True),(Wait0,False),(Wait1,False)])),((0,1),([2,1],fromList [(Turn,True),(Wait0,True),(Wait1,False)])),((0,2),([3,1],fromList [(Turn,True),(Wait0,True),(Wait1,False)])),((1,1),([3,2],fromList [(Turn,True),(Wait0,True),(Wait1,True)])),((1,2),([3,3],fromList [(Turn,True),(Wait0,True),(Wait1,True)]))]})
+```
+
+Oh no! Looks like it doesn't hold. Let's make the counterexample a bit
+more readable so we can analyze what went wrong:
+
+``` {.haskell}
+  > Just (_, path) = checkInvariant (pnot (atom (ProcAtLine 0 3) .& atom (ProcAtLine 1 3))) bad_peteTS
+  > print (pathHead path) >> mapM_ print (snd <$> pathTail path)
+  ([0,0],fromList [(Turn,False),(Wait0,False),(Wait1,False)])
+  ([1,0],fromList [(Turn,True),(Wait0,False),(Wait1,False)])
+  ([2,0],fromList [(Turn,True),(Wait0,True),(Wait1,False)])
+  ([3,0],fromList [(Turn,True),(Wait0,True),(Wait1,False)])
+  ([4,0],fromList [(Turn,True),(Wait0,True),(Wait1,False)])
+  ([5,0],fromList [(Turn,True),(Wait0,False),(Wait1,False)])
+  ([0,0],fromList [(Turn,True),(Wait0,False),(Wait1,False)])
+  ([0,1],fromList [(Turn,False),(Wait0,False),(Wait1,False)])
+  ([1,1],fromList [(Turn,True),(Wait0,False),(Wait1,False)])
+  ([2,1],fromList [(Turn,True),(Wait0,True),(Wait1,False)])
+  ([3,1],fromList [(Turn,True),(Wait0,True),(Wait1,False)])
+  ([3,2],fromList [(Turn,True),(Wait0,True),(Wait1,True)])
+  ([3,3],fromList [(Turn,True),(Wait0,True),(Wait1,True)])
+```
+
+Here is the important bit, annotated with letters for discussion:
+
+``` {.haskell}
+  ([0,0],fromList [(Turn,True),(Wait0,False),(Wait1,False)])  -- a
+  ([0,1],fromList [(Turn,False),(Wait0,False),(Wait1,False)]) -- b
+  ([1,1],fromList [(Turn,True),(Wait0,False),(Wait1,False)])  -- c
+  ([2,1],fromList [(Turn,True),(Wait0,True),(Wait1,False)])   -- d
+  ([3,1],fromList [(Turn,True),(Wait0,True),(Wait1,False)])   -- e
+  ([3,2],fromList [(Turn,True),(Wait0,True),(Wait1,True)])    -- f
+  ([3,3],fromList [(Turn,True),(Wait0,True),(Wait1,True)])    -- g
+```
+
+At a, both processes are at line 0. First, P1 sets `Turn` to `False`,
+indicating it is P0's turn to enter the critical section. Then, P0 sets
+it to `True`, indicating it is P1's turn. Then, at c, P0 sets `Wait0` to
+`True`, indicating it wishes to enter. At line d, P0 enters its critical
+section even though `Turn` is `True`, because `Wait1` is still `False`.
+Then, P1 is able to enter *it's* critical section, because `Turn` is
+`True`.
+
+We see that it *really matters* that the `Wait` variables are updated
+*before* the `Turn` flag is flipped! Otherwise, the algorithm simply
+does not work.
+
+## What's next?
+
+In this post, we showed how the basic idea of model checking can be
+applied to a real-world program to prove something valuable and
+non-trivial. Peterson's algorithm isn't *too* complicated, but it's not
+easy to see why it's correct at first glance. We saw that by translating
+it to a transition system, we could exhaustively explore the reachable
+state space, and found that it was impossible to violated the desired
+invariant. When we modified the program in a subtle but significant way,
+we discovered that the invariant failed.. Furthermore, the model
+checking approach discovered a counterexample that helped us to
+understand *why* it failed.
+
+So far in this series, the only properties we have explored and checked
+are *invariants*. However, there are some properties that cannot be
+expressed as invariants; for instance, the property that a traffic light
+will be green infinitely often, or that a yellow light always precedes a
+red light. In the next post, we will explore a larger class of
+properties called *regular safety properties*. We will show how to use
+*nondeterministic finite automata* to express such properties, and how
+to check whether these properties hold.
