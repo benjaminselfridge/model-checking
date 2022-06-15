@@ -25,14 +25,12 @@ A simple imperative programming language
 > import qualified Data.Map.Strict as Map
 > import Data.Vector (Vector)
 > import qualified Data.Vector as Vec
-> import Data.Void
 
 In this section, we'll define a simple, Turing-complete imperative language with
 variable assignments and conditional gotos. The language will be implemented as
-a *embedded domain-specific language (eDSL)* in Haskell. The embedding will be
-(mostly) shallow. We will use Haskell functions to represent modifications to
-the state of the program variables and predicates about the state (which affect
-control flow). However, we will not allow these functions to modify or query the
+an *embedded domain-specific language (eDSL)* in Haskell. The embedding will be
+(mostly) shallow. We will use Haskell functions to represent effects and state
+predicates. However, we will not allow these functions to modify or query the
 current line number in the program; that bit will be deeply embedded in the
 language AST.
 
@@ -43,8 +41,8 @@ a program is a sequence of statements. There are two kinds of statements:
      a value)
   2. `IfGoto`: test a condition; if it's true, go to the given line number
 
-The *global variable environment*, or just *environment*, is an assignment of
-`val`ues to a set of `var`iables. The environment is going to be a `Map` from
+The *global variable environment*, or just the *environment*, is an assignment
+of `val`ues to a set of `var`iables. The environment is going to be a `Map` from
 `var`s to `val`s:
 
 > type Env var val = Map var val
@@ -54,8 +52,7 @@ A statement that modifies the global variable environment is represented as an
 
 > type Effect var val = Env var val -> Env var val
 
-A statement that *branches* needs to change the current line number. We'll use
-`Int` as a sensible type for our line numbers:
+We'll use `Int` as a sensible type for our line numbers:
 
 > type LineNumber = Int
 
@@ -257,7 +254,7 @@ values of `X` and `Y`, and tested whether the value of `X` was equal to `1` plus
 the value of `Y`. As with `Modify`, we'll write some helper functions to create
 these environment predicates in a way that more closely resembles the original
 `C` code. The first such function will be the equality operator, which evaluates
-two expressions and determines if they are equal:
+two expressions and determines if the results are equal:
 
 > (.==) :: Eq val => Expr var val -> Expr var val -> Predicate (Env var val)
 > (e1 .== e2) env = e1 env == e2 env
@@ -347,8 +344,8 @@ environment:
 > type ParProg var val = Vector (Prog var val)
 
 We will use the term *process* to denote a sequential program that is part of a
-larger parallel program. The *process id* of a particular process is just the
-corresponding index into this vector.
+larger parallel program. The *process id* of a particular process is just its
+index within this vector.
 
 > type ProcId = Int
 
@@ -432,11 +429,11 @@ the transition system will be a pair `(Vector LineNumber, Env var val)`,
 consisting of the current line number of each process, and the current values of
 the global variable environment.
 
+> type ParProgState var val = (Vector LineNumber, Env var val)
+
 Every state `(lineNums, env)` will have exactly `Vec.length lineNums` outgoing
 transitions, each corresponding to executing the current line of one of the
 running processes.
-
-> type ParProgState var val = (Vector LineNumber, Env var val)
 
 What should the set of atomic propositional variables be for the transition
 system of a program? Instead of choosing this for all programs, we defer this
@@ -625,7 +622,7 @@ We see that it *really matters* that the `Wait` variables are updated *before*
 the `Turn` flag is flipped! Otherwise, the algorithm simply does not work.
 
 What's next?
---
+==
 
 In this post, we applied model checking to a real-world program and proved
 something valuable and non-trivial. Peterson's algorithm isn't *too*

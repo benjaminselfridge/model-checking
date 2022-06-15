@@ -32,18 +32,15 @@ import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Vector (Vector)
 import qualified Data.Vector as Vec
-import Data.Void
 ```
 
 In this section, we'll define a simple, Turing-complete imperative
 language with variable assignments and conditional gotos. The language
-will be implemented as a *embedded domain-specific language (eDSL)* in
+will be implemented as an *embedded domain-specific language (eDSL)* in
 Haskell. The embedding will be (mostly) shallow. We will use Haskell
-functions to represent modifications to the state of the program
-variables and predicates about the state (which affect control flow).
-However, we will not allow these functions to modify or query the
-current line number in the program; that bit will be deeply embedded in
-the language AST.
+functions to represent effects and state predicates. However, we will
+not allow these functions to modify or query the current line number in
+the program; that bit will be deeply embedded in the language AST.
 
 Our language will be called `MIG`, which stands for `Modify`/`IfGoto`.
 In `MIG`, a program is a sequence of statements. There are two kinds of
@@ -54,7 +51,7 @@ statements:
 2.  `IfGoto`: test a condition; if it's true, go to the given line
     number
 
-The *global variable environment*, or just *environment*, is an
+The *global variable environment*, or just the *environment*, is an
 assignment of `val`ues to a set of `var`iables. The environment is going
 to be a `Map` from `var`s to `val`s:
 
@@ -70,7 +67,6 @@ one:
 type Effect var val = Env var val -> Env var val
 ```
 
-A statement that *branches* needs to change the current line number.
 We'll use `Int` as a sensible type for our line numbers:
 
 ``` {.haskell .literate}
@@ -301,7 +297,7 @@ equal to `1` plus the value of `Y`. As with `Modify`, we'll write some
 helper functions to create these environment predicates in a way that
 more closely resembles the original `C` code. The first such function
 will be the equality operator, which evaluates two expressions and
-determines if they are equal:
+determines if the results are equal:
 
 ``` {.haskell .literate}
 (.==) :: Eq val => Expr var val -> Expr var val -> Predicate (Env var val)
@@ -408,7 +404,7 @@ type ParProg var val = Vector (Prog var val)
 
 We will use the term *process* to denote a sequential program that is
 part of a larger parallel program. The *process id* of a particular
-process is just the corresponding index into this vector.
+process is just its index within this vector.
 
 ``` {.haskell .literate}
 type ProcId = Int
@@ -504,13 +500,13 @@ be that a state in the transition system will be a pair
 number of each process, and the current values of the global variable
 environment.
 
-Every state `(lineNums, env)` will have exactly `Vec.length lineNums`
-outgoing transitions, each corresponding to executing the current line
-of one of the running processes.
-
 ``` {.haskell .literate}
 type ParProgState var val = (Vector LineNumber, Env var val)
 ```
+
+Every state `(lineNums, env)` will have exactly `Vec.length lineNums`
+outgoing transitions, each corresponding to executing the current line
+of one of the running processes.
 
 What should the set of atomic propositional variables be for the
 transition system of a program? Instead of choosing this for all
@@ -730,7 +726,7 @@ We see that it *really matters* that the `Wait` variables are updated
 *before* the `Turn` flag is flipped! Otherwise, the algorithm simply
 does not work.
 
-## What's next?
+# What's next?
 
 In this post, we applied model checking to a real-world program and
 proved something valuable and non-trivial. Peterson's algorithm isn't
