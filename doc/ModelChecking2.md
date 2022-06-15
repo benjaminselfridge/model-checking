@@ -115,8 +115,10 @@ type Prog var val = Vector (Stmt var val)
 
 In this section and the next section, we will define some helper
 functions that will make it easier to create readable statements in
-`MIG`. In this section, we focus on `Modify`; in the next, we'll look at
-`IfGoto`.
+`MIG`. This will be a bit of a diversion from the main theme of model
+checking, but it is always worthwhile to get the details to look good
+and feel good. In this section, we focus on `Modify`; in the next, we'll
+look at `IfGoto`.
 
 The `Modify` constructor takes a single argument, an `Effect`:
 
@@ -378,7 +380,7 @@ fact = Vec.fromList
   {- 0 -} [ Modify (Res .= 1 >: I .= 2)
   {- 1 -} , IfGoto (pnot (var I .<= var N)) 5
   {- 2 -} ,   Modify (Res .= var Res * var I)
-  {- 3 -} ,   Modify (I   .= var I   +     1)
+  {- 3 -} ,   Modify (I .= var I + 1)
   {- 4 -} ,   goto 1
   {- 5 -} , goto 5 -- halt
           ]
@@ -730,10 +732,10 @@ does not work.
 
 In this post, we applied model checking to a real-world program and
 proved something valuable and non-trivial. Peterson's algorithm isn't
-*too* complicated, but it's not straightforward to see why it's correct
-at first glance. We saw that by translating it to a transition system,
-we could exhaustively explore the reachable state space, and found that
-it was impossible to violate the desired invariant. When we modified the
+*too* complicated, but it's not easy to see why it's correct at first
+glance. We saw that by translating it to a transition system, we could
+exhaustively explore the reachable state space, and found that it was
+impossible to violate the desired invariant. When we modified the
 program slightly, we discovered that the invariant failed. Furthermore,
 the model checking approach discovered a counterexample that helped us
 to understand *why* it failed.
