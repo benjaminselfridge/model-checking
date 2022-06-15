@@ -1,11 +1,12 @@
-In the [previous post](ModelChecking1.html), we introduced transition systems,
-which are directed graphs that capture properties of the state of a system as it
-evolves through time. Each state in the graph was labeled with a *true-set*, the
-set of all atomic propositions which are true in that state. We explored how to
-build logical propositions in terms of the atomic propositions of the state
-labels, and how to check that such a proposition is an *invariant* of the
-transition system. By using an off-the-shelf graph search algorithm, we
-discovered all reachable states and evaluated the proposition at each state.
+In the [previous post](2022-05-10-model-checking-1.html), we introduced
+transition systems, which are directed graphs that capture properties of the
+state of a system as it evolves through time. Each state in the graph was
+labeled with a *true-set*, the set of all atomic propositions which are true in
+that state. We explored how to build logical propositions in terms of the atomic
+propositions of the state labels, and how to check that such a proposition is an
+*invariant* of the transition system. By using an off-the-shelf graph search
+algorithm, we discovered all reachable states and evaluated the proposition at
+each state.
 
 In this post, we will take a look at how transition systems can be derived from
 computer programs. We will develop a very simple imperative programming
